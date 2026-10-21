@@ -1,4 +1,4 @@
-import type { RunContext } from '../api.ts'
+import type { RunContext, RunOptions } from '../api.ts'
 import { DowelError } from '../errors.ts'
 import type { DeclaredScope, Named } from '../model/checks.ts'
 import type {
@@ -39,11 +39,11 @@ type Body<E, R> = (entry: E, run: RunContext) => R | PromiseLike<R>
  * What a dependent receives for an execution: a function that opens a
  * container for the execution's scope with the given input values, hands the
  * entry to `body`, and disposes the container once `body` settles. Without
- * inputs it takes only the body.
+ * inputs it takes only the body. A `signal` in the options cancels the run.
  */
 export type Runner<E, Inputs> = [keyof Inputs] extends [never]
-	? <R>(body: Body<E, R>) => Promise<R>
-	: <R>(inputs: InputValues<Inputs>, body: Body<E, R>) => Promise<R>
+	? <R>(body: Body<E, R>, options?: RunOptions) => Promise<R>
+	: <R>(inputs: InputValues<Inputs>, body: Body<E, R>, options?: RunOptions) => Promise<R>
 
 /** `unknown` when the entry lives in the execution's scope or above, where its runs can see it. */
 type EntryCheck<Sc extends AnyScope, E> =

@@ -183,7 +183,7 @@ export async function openStore(
 			`Scope '${scopePlan.scope.name}' cannot be opened because the container it would open from has been disposed.`,
 		)
 	}
-	signal?.throwIfAborted()
+	if (signal?.aborted) throw signal.reason
 	const parent = chain[chain.length - 1]!
 	const store = newStore(scopePlan.scope, scopePlan.cells, parent.owned, parent)
 	supply(scopePlan, store, bindings, needs.required)
@@ -398,7 +398,8 @@ function runner(plan: ExecutionPlan, chain: Chain): (...args: unknown[]) => Prom
 /** Runs once under `base`: opens the run's container, hands the entry to the body, and disposes the container. */
 async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): Promise<unknown> {
 	const { name } = plan
-	const [values, body] = plan.inputs.length === 0 ? [{}, args[0]] : [args[0], args[1]]
+	const [values, body, options] =
+		plan.inputs.length === 0 ? [{}, args[0], args[1]] : [args[0], args[1], args[2]]
 	if (typeof body !== 'function' || typeof values !== 'object' || values === null) {
 		throw new DowelError(
 			'INVALID_NODE',
@@ -407,6 +408,7 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 				: `Execution '${name}' must be called with an object of its inputs followed by a body function.`,
 		)
 	}
+	const signal = signalOption(name, options)
 	const bindings = inputBindings(plan, values)
 	// The parent owns the run, not just its container: disposing the parent cancels the run and
 	// waits for the body before the run's container, and then the parent, are disposed. The body
@@ -419,6 +421,7 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 			? cancellation(`Execution '${name}' was disposed before its body started.`)
 			: reason
 	const opened = await openStore(base, plan.child, bindings, plan.needs, {
+		signal,
 		beforeDisposal: async () => {
 			if (typeof phase === 'object') await phase
 		},
@@ -470,6 +473,32 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 	)
 	await opened.dispose()
 	return value
+}
+
+/**
+ * The `signal` a run was called with, checked by shape rather than class, so
+ * that a signal from another realm or a polyfill works too.
+ */
+function signalOption(name: string, options: unknown): AbortSignal | undefined {
+	if (options === undefined) return undefined
+	if (typeof options === 'object' && options !== null) {
+		const { signal } = options as { signal?: unknown }
+		if (signal === undefined || isSignal(signal)) return signal
+	}
+	throw new DowelError(
+		'INVALID_NODE',
+		`Execution '${name}' was called with options that are not an object with an AbortSignal 'signal'.`,
+	)
+}
+
+function isSignal(value: unknown): value is AbortSignal {
+	if (typeof value !== 'object' || value === null) return false
+	const signal = value as Partial<Record<keyof AbortSignal, unknown>>
+	return (
+		typeof signal.aborted === 'boolean' &&
+		typeof signal.addEventListener === 'function' &&
+		typeof signal.removeEventListener === 'function'
+	)
 }
 
 /** Whether an error is how work reports being aborted, as `fetch` and `AbortSignal` do. */
