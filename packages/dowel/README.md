@@ -204,7 +204,7 @@ Each call to the runner:
 2. resolves the entry and hands it to the body;
 3. disposes the container once the body settles, whether it returned or threw.
 
-What the entry reaches in the scopes above the run's, and that nothing provided reaches outside an execution, is created on demand: the first run that needs it creates it, in the store of the scope it lives in, which shares it with later runs and disposes it with itself. Concurrent runs share one creation, and one that fails is created again on the next demand, so a misconfigured service fails the runs that need it rather than `build()`. `get()` can't return such a service; provide it to create it with the container, and to have `build()` fail fast when it can't start.
+What the entry reaches in the scopes above the run's, and that nothing provided reaches outside an execution, is created on demand: the first run that needs it creates it, in the store of the scope it lives in, which shares it with later runs and disposes it with itself. Concurrent runs share one creation, and one that fails is created again on the next demand, so a misconfigured service fails the runs that need it rather than `build()`. `get()` can't return such a service, and throws `CREATED_ON_DEMAND`; provide it to create it with the container, and to have `build()` fail fast when it can't start.
 
 The runner takes an object with a value for each input, typed from `inputs`. An execution without inputs takes only the body. `build()` isn't callable while the inputs don't cover what the entry needs: `IncompleteExecutions<{ RunJob: "Other" }>`.
 
@@ -245,7 +245,7 @@ Nodes are matched by name, and a name belongs to the module that first declared 
 
 For each live container, an update:
 
-1. compiles the latest declarations and initializes them as a _proposal_, while the current generation keeps running. Root-scope instances from untouched modules, whose dependencies didn't change, are carried over;
+1. compiles the latest declarations and initializes them as a _proposal_, while the current generation keeps running. Root-scope instances from untouched modules, whose dependencies didn't change, are carried over, including those runs created on demand (it waits for any still being created);
 2. commits the proposal once it is up. Opened containers and running executions are disposed (running executions have their `signal` aborted and are waited for), and so are the instances it replaced;
 3. leaves stale references, held by modules that weren't re-evaluated, working.
 

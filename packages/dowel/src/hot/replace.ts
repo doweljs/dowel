@@ -45,8 +45,9 @@ export async function replaceGeneration(access: HotAccess): Promise<Committed> {
 	// Records come in creation order, so an instance's dependencies were considered before it.
 	const carriable = (plan: CachedPlan): boolean =>
 		isUnchanged(plan) &&
-		// The proposal may have created one itself meanwhile, if it now creates it eagerly.
+		// The proposal may have created one itself meanwhile, or be creating it.
 		root.cells[plan.cell] === UNSET &&
+		root.pending?.[plan.cell] === undefined &&
 		// One the proposal created anew must not be left holding the instance it replaces.
 		plan.deps.every((dep) => !isCached(dep.plan) || carriedPlans.has(dep.plan))
 	let seen = 0
@@ -67,7 +68,9 @@ export async function replaceGeneration(access: HotAccess): Promise<Committed> {
 	// Discarding the proposal disposes only what it created, containers opened meanwhile included.
 	const discard = () => disposeWithout(root, carried, 'a discarded replacement')
 	await withCleanup(() => initialize(rootPlan.needs.order, [root]), discard)
-	// Runs may have created instances on demand in the old root while the proposal initialized.
+	// Runs may have created instances on demand in the old root while the proposal initialized,
+	// or be creating them; those are waited for, so that they are carried and not created twice.
+	if (oldRoot.pending !== null) await Promise.allSettled(oldRoot.pending)
 	carryNew()
 	// The container was disposed meanwhile, carried instances included: there is nothing to commit to.
 	if (oldRoot.disposed) return { teardown: discard() }

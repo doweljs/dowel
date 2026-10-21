@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import { bind, container, DowelError, execution, scope, service, slot } from '../src/index.ts'
-import { gate, PerRequest, Request, untyped } from './support.ts'
+import { hotAccess } from '../src/runtime/hooks.ts'
+import { gate, nextTask, PerRequest, Request, untyped } from './support.ts'
 
 describe('services reached only through executions', () => {
 	const JobScope = scope('job')
@@ -258,5 +259,42 @@ describe('services reached only through executions', () => {
 		const Handler = service('Handler', { request: Request, record: Record }, () => ({}))
 		const app = await container().provide(Handler).build()
 		expect(() => untyped(app).get(Audit)).toThrow(/not visible from 'root'/)
+	})
+
+	test('a dependency failing synchronously leaves nothing unhandled or half-started behind', async () => {
+		const unhandled: unknown[] = []
+		const onUnhandled = (reason: unknown): void => void unhandled.push(reason)
+		process.on('unhandledRejection', onUnhandled)
+		try {
+			const Pool = service('Pool', async () => 'pool')
+			const Broken = service('Broken', () => {
+				throw new Error('misconfigured')
+			})
+			const Top = service('Top', { broken: Broken }, (deps) => deps)
+			const Entry = service('Entry', { to: To, pool: Pool, top: Top }, (deps) => deps)
+			const Use = execution('Use', { scope: JobScope, entry: Entry, inputs: { to: To } })
+			const app = await container().provide(Use).build()
+			for (const to of ['a', 'b', 'c']) {
+				await expect(app.get(Use)({ to }, () => {})).rejects.toThrow('misconfigured')
+			}
+			await nextTask()
+			expect(unhandled).toEqual([])
+			// Retried on every run, the root does not keep a record of each failed attempt.
+			expect(untyped(app)[hotAccess].root.starting.size).toBe(0)
+		} finally {
+			process.off('unhandledRejection', onUnhandled)
+		}
+	})
+
+	test('get() reports one with its own error code', async () => {
+		const { Mailer, Api } = fixture()
+		const app = await container().provide(Api).build()
+		let error: unknown
+		try {
+			untyped(app).get(Mailer)
+		} catch (failure) {
+			error = failure
+		}
+		expect((error as DowelError).code).toBe('CREATED_ON_DEMAND')
 	})
 })

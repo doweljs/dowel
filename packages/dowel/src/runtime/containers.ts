@@ -61,7 +61,7 @@ abstract class ContainerBase {
 		// Values and runners need nothing created, so only services must have been created with the container.
 		if (isCached(plan) && !this.compiled.eager.has(plan)) {
 			throw new DowelError(
-				'NOT_PROVIDED',
+				'CREATED_ON_DEMAND',
 				`'${plan.name}' is reached only through an execution, so runs create it when they need it and get() cannot return it. Provide it to create it with the container.`,
 			)
 		}

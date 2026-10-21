@@ -278,4 +278,92 @@ describe('executions across replacements', () => {
 		expect(current.closed).toBe(false)
 		expect(current).not.toBe(old)
 	})
+
+	test('an update waits for what a run is still creating on demand, and carries it', async () => {
+		const Job = scope('job')
+		let created = 0
+		const starting = gate()
+		const ready = gate()
+		const Mailer = service('Mailer', async () => {
+			const id = ++created
+			starting.open()
+			await ready.promise
+			return { id }
+		})
+		const Send = execution('Send', { scope: Job, entry: Mailer })
+		const Api = service(
+			'Api',
+			{ send: Send },
+			({ send }) =>
+				() =>
+					send((mailer) => mailer.id),
+		)
+		const Other = service('Other', () => 1)
+		await update('mail.ts', { Job, Mailer, Send, Api })
+		await update('other.ts', { Other })
+		const app = await container().provide(Api, Other).build()
+		const first = app.get(Api)()
+		await starting.promise
+		const updating = update('other.ts', { Other: service('Other', () => 2) })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		ready.open()
+		await updating
+		// The run belongs to the replaced generation, whose teardown may dispose it before its body.
+		const outcome: unknown = await first.then(
+			(id) => id,
+			(error: { code?: string }) => error.code,
+		)
+		expect<unknown[]>([1, 'DISPOSED']).toContain(outcome)
+		expect(await app.get(Api)()).toBe(1)
+		expect(created).toBe(1)
+	})
+
+	test('an instance the proposal is still creating is not also carried over', async () => {
+		const Job = scope('job')
+		let created = 0
+		const disposed: number[] = []
+		const proposalHeld = gate()
+		const Mailer = service('Mailer', async (ctx) => {
+			const id = ++created
+			// The first creation is the proposal's, which a run starts and does not wait for.
+			if (id === 1) await proposalHeld.promise
+			ctx.defer(() => void disposed.push(id))
+			return { id }
+		})
+		const Send = execution('Send', { scope: Job, entry: Mailer })
+		const Api = service(
+			'Api',
+			{ send: Send },
+			({ send }) =>
+				() =>
+					send((mailer) => mailer.id),
+		)
+		const Other = service('Other', () => 1)
+		await update('mail.ts', { Job, Mailer, Send, Api })
+		await update('other.ts', { Other })
+		const app = await container().provide(Api, Other).build()
+
+		const held = gate()
+		const initializing = gate()
+		let proposalRun: Promise<number> | undefined
+		const updating = update('other.ts', {
+			Other: service('Other', { send: Send }, async ({ send }) => {
+				proposalRun = send((mailer) => mailer.id)
+				initializing.open()
+				await held.promise
+				return 2
+			}),
+		})
+		await initializing.promise
+		// The committed generation creates its own Mailer meanwhile.
+		expect(await app.get(Api)()).toBe(2)
+		held.open()
+		await updating
+		proposalHeld.open()
+		expect(await proposalRun).toBe(1)
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		// The committed generation's Mailer was not carried, so its teardown disposed it.
+		expect(disposed).toEqual([2])
+		expect(await app.get(Api)()).toBe(1)
+	})
 })

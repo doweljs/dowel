@@ -245,22 +245,30 @@ function init(plan: CachedPlan, chain: Chain): unknown {
 	// reaches the factory as it is.
 	const values = new Array<unknown>(plan.deps.length)
 	const waiting: Promise<void>[] = []
-	for (let i = 0; i < plan.deps.length; i++) {
-		const dep = plan.deps[i]!.plan
-		if (!isCached(dep)) {
-			values[i] = resolve(dep, chain)
-			continue
+	try {
+		for (let i = 0; i < plan.deps.length; i++) {
+			const dep = plan.deps[i]!.plan
+			if (!isCached(dep)) {
+				values[i] = resolve(dep, chain)
+				continue
+			}
+			const value = init(dep, chain)
+			if (isPromiseLike(value)) {
+				waiting.push(
+					joined(Promise.resolve(value), dep, store).then((ready) => {
+						values[i] = ready
+					}),
+				)
+			} else {
+				values[i] = value
+			}
 		}
-		const value = init(dep, chain)
-		if (isPromiseLike(value)) {
-			waiting.push(
-				joined(Promise.resolve(value), dep, store).then((ready) => {
-					values[i] = ready
-				}),
-			)
-		} else {
-			values[i] = value
-		}
+	} catch (error) {
+		// A dependency failed synchronously, so the factory never runs: nothing waits for what
+		// was joined already, whose failures must not go unhandled.
+		for (const promise of waiting) promise.catch(noop)
+		abandon(store, record)
+		throw error
 	}
 
 	const create = (): unknown => {
