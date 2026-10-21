@@ -34,6 +34,8 @@ export interface InstanceRecord {
 
 /** Something a store owns and disposes before itself: an opened container or a running execution. */
 export interface Child {
+	/** Aborts the signals of the runs at and beneath it, without waiting for anything. */
+	cancel(): void
 	dispose(): Promise<void>
 }
 
