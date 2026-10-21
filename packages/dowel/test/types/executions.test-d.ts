@@ -4,6 +4,7 @@
  */
 import { expectTypeOf } from 'bun:test'
 import {
+	type CreatedOnDemand,
 	container,
 	execution,
 	type IncompleteExecutions,
@@ -158,4 +159,22 @@ test('conditionally present execution inputs preserve the graph and runner types
 	>()
 	const annotated = await container().provide(Annotated).build()
 	expectTypeOf(annotated.get(Annotated)({}, (entry) => entry)).toEqualTypeOf<Promise<number>>()
+})
+
+test('get() accepts what the container creates, not what only an execution reaches', async () => {
+	const JobScope = scope('job')
+	const Mailer = service('Mailer', () => ({ send: (to: string) => to }))
+	const Send = execution('Send', { scope: JobScope, entry: Mailer })
+	const Api = service('Api', { send: Send }, ({ send }) => send)
+	const app = await container().provide(Api).build()
+	expectTypeOf(app.get(Send)).toEqualTypeOf<Infer<typeof Send>>()
+	// @ts-expect-error: only Send reaches it, so runs create it
+	app.get(Mailer)
+	expectTypeOf<Parameters<typeof app.get<typeof Mailer>>[0]>().toEqualTypeOf<
+		CreatedOnDemand<'Mailer'>
+	>()
+
+	// Provided, it is created with the container.
+	const both = await container().provide(Api, Mailer).build()
+	expectTypeOf(both.get(Mailer).send).toEqualTypeOf<(to: string) => string>()
 })

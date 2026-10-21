@@ -54,6 +54,12 @@ abstract class ContainerBase {
 	get(node: unknown): any {
 		this.assertLive()
 		const plan = lookup(this.compiled, node)
+		if (!this.compiled.eager.has(plan)) {
+			throw new DowelError(
+				'NOT_PROVIDED',
+				`'${plan.name}' is reached only through an execution, so runs create it when they need it and get() cannot return it. Provide it to create it with the container.`,
+			)
+		}
 		// Plans and stores share canonical scope nodes, so identity is exact here.
 		if (this.chain[plan.scope.depth]?.scope !== plan.scope) {
 			notVisible(plan.name, plan.scope, this.store.scope)

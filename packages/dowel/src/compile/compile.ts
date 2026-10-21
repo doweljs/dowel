@@ -28,6 +28,7 @@ import type {
 	ExecutionPlan,
 	GraphNode,
 	ImplInfo,
+	LazyNeeds,
 	ManyPlan,
 	Plan,
 	PlanDep,
@@ -59,7 +60,14 @@ interface ScopeDraft extends ScopePlan {
 	cells: number
 	readonly values: Map<string, ScopeValuePlan>
 	readonly bound: Set<string>
+	readonly cached: CachedPlan[]
+	/** `order` is filled once compilation knows what is created eagerly. */
 	readonly needs: { readonly order: CachedPlan[]; readonly required: Set<string> }
+}
+
+/** Lazy needs while compilation still decides which of them are created eagerly. */
+interface LazyDraft extends LazyNeeds {
+	readonly order: CachedPlan[]
 }
 
 const identity: Canonicalize = (node) => node
@@ -86,6 +94,8 @@ class Compiler {
 	/** Names on the current dependency path, for cycle detection and messages. */
 	private readonly path: string[] = []
 	private readonly visiting = new Set<number>()
+	/** Each execution's lazy needs, narrowed once compilation knows what is created eagerly. */
+	private readonly lazy: LazyDraft[][] = []
 
 	constructor(
 		composition: Composition,
@@ -130,6 +140,14 @@ class Compiler {
 
 	compile(): Compiled {
 		for (const root of this.roots) this.planNode(root, false)
+		const eager = this.eagerPlans()
+		for (const draft of this.scopes.values()) {
+			draft.needs.order.push(...draft.cached.filter((plan) => eager.has(plan)))
+		}
+		for (const groups of this.lazy) {
+			for (const group of groups) retain(group.order, (plan) => !eager.has(plan))
+			retain(groups, (group) => group.order.length > 0)
+		}
 
 		for (const target of this.serviceOverrides.keys()) {
 			if (!this.appliedOverrides.has(target)) {
@@ -139,7 +157,20 @@ class Compiler {
 				)
 			}
 		}
-		return { plans: this.plans, graph: this.graph, scopes: this.scopes }
+		return { plans: this.plans, graph: this.graph, scopes: this.scopes, eager }
+	}
+
+	/** What the roots reach without entering an execution's entry, which runs create on demand. */
+	private eagerPlans(): Set<Plan> {
+		const eager = new Set<Plan>()
+		const walk = (plan: Plan): void => {
+			if (eager.has(plan)) return
+			eager.add(plan)
+			if (plan.kind === 'execution') return
+			for (const dep of plan.deps) walk(dep.plan)
+		}
+		for (const root of this.roots) walk(this.plans.get(root.id)!)
+		return eager
 	}
 
 	private planNode(node: DeclaredNode, optional: boolean): Plan {
@@ -171,6 +202,7 @@ class Compiler {
 			cells: 0,
 			values: new Map(),
 			bound: new Set(),
+			cached: [],
 			needs: { order: [], required: new Set() },
 		}
 		this.scopes.set(node.name, draft)
@@ -370,8 +402,9 @@ class Compiler {
 				`Execution '${declared.name}' runs in scope '${runs}' but its entry '${entry.name}' lives in '${lives}', which is not visible from there.`,
 			)
 		}
-		const needs = needsOf(entry, childDraft)
+		const { needs, lazy } = this.needsOf(entry, childDraft)
 		assertSupplied(declared, needs, slots)
+		this.lazy.push(lazy)
 
 		const plan: ExecutionPlan = {
 			kind: 'execution',
@@ -383,6 +416,7 @@ class Compiler {
 			child: childDraft,
 			inputs,
 			needs,
+			lazy,
 		}
 		const edges = [
 			{ key: 'entry', id: entryNode.id },
@@ -464,39 +498,55 @@ class Compiler {
 		})
 	}
 
-	/** Adds a cached plan to its scope's initialization order, after the dependencies planned before it. */
+	/** Adds a cached plan to its scope, after the dependencies planned before it. */
 	private addCached(plan: CachedPlan): void {
-		this.scopeDraft(plan.scope).needs.order.push(plan)
+		this.scopeDraft(plan.scope).cached.push(plan)
 	}
+
+	/**
+	 * What a run at `scope` needs to resolve `entry`: the cached plans in its
+	 * own store that `entry` reaches, the scoped slots there it reaches through
+	 * required dependencies, and the cached plans it reaches in the scopes
+	 * above, of which compilation later keeps those not created eagerly. A
+	 * nested execution whose scopes open at `scope` or above resolves those
+	 * from its own store, so it is not followed.
+	 */
+	private needsOf(entry: Plan, scope: ScopePlan): { needs: ScopeNeeds; lazy: LazyDraft[] } {
+		const { depth } = scope.scope
+		const reached = new Set<Plan>()
+		const required = new Set<string>()
+		const walk = (current: Plan, optional: boolean): void => {
+			if (current.kind === 'scopeValue') {
+				if (current.scope === scope.scope && !optional) required.add(current.name)
+				return
+			}
+			if (reached.has(current)) return
+			reached.add(current)
+			if (current.kind === 'execution' && current.scope.depth < depth) return
+			for (const dep of current.deps) walk(dep.plan, dep.optional)
+		}
+		walk(entry, false)
+		const lazy: LazyDraft[] = []
+		for (let above = scope.scope.parent; above !== null; above = above.parent) {
+			const order = this.scopeDraft(above).cached.filter((plan) => reached.has(plan))
+			lazy.unshift({ depth: above.depth, order })
+		}
+		return {
+			needs: { order: scope.cached.filter((plan) => reached.has(plan)), required },
+			lazy,
+		}
+	}
+}
+
+/** Keeps the items of `items` that satisfy `keep`, in place. */
+function retain<T>(items: T[], keep: (item: T) => boolean): void {
+	let kept = 0
+	for (const item of items) if (keep(item)) items[kept++] = item
+	items.length = kept
 }
 
 function valuePlan(name: string, scope: ScopeNode, value: unknown): ValuePlan {
 	return { kind: 'value', name, scope, deps: [], value }
-}
-
-/**
- * What a run at `scope` needs from its own store to resolve `entry`: the
- * cached plans there that `entry` reaches, and the scoped slots there it
- * reaches through required dependencies. A nested execution whose scopes
- * open at `scope` or above resolves those from its own store, so it is not
- * followed.
- */
-function needsOf(entry: Plan, scope: ScopePlan): ScopeNeeds {
-	const { depth } = scope.scope
-	const reached = new Set<Plan>()
-	const required = new Set<string>()
-	const walk = (current: Plan, optional: boolean): void => {
-		if (current.kind === 'scopeValue') {
-			if (current.scope === scope.scope && !optional) required.add(current.name)
-			return
-		}
-		if (reached.has(current)) return
-		reached.add(current)
-		if (current.kind === 'execution' && current.scope.depth < depth) return
-		for (const dep of current.deps) walk(dep.plan, dep.optional)
-	}
-	walk(entry, false)
-	return { order: scope.needs.order.filter((plan) => reached.has(plan)), required }
 }
 
 /** An execution's inputs must cover the scoped slots its entry requires in the execution's scope. */

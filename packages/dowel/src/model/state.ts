@@ -17,6 +17,7 @@ import type {
 	Slot,
 } from './declarations.ts'
 import type {
+	CreatedOnDemand,
 	MissingScopeValues,
 	NotChildScope,
 	NotProvided,
@@ -37,6 +38,7 @@ import type {
 	MissingInputs,
 	NeededBy,
 	Reach,
+	ReachEager,
 	RequiredBy,
 } from './graph.ts'
 import type { GraphOf, Infer, MetaOf } from './infer.ts'
@@ -250,11 +252,13 @@ export type MissingExecutionInputs<S extends ContainerState> = MissingInputs<S['
 export type BoundExecutionInputs<S extends ContainerState> = BoundInputs<S['graph'], S['roots']>
 
 type Check<Name extends string, N, S extends ContainerState, Current extends ScopeMeta> =
-	Name extends Reachable<S>
+	Name extends ReachEager<S['graph'], S['roots']>
 		? EntryOf<S['graph'], Name>['scope'] extends Current['name'] | Current['above']
 			? N
 			: NotVisible<Name, EntryOf<S['graph'], Name>['scope']>
-		: NotProvided<Name>
+		: Name extends Reachable<S>
+			? CreatedOnDemand<Name>
+			: NotProvided<Name>
 
 export type Resolvable<N, S extends ContainerState, Current extends ScopeMeta> =
 	N extends Service<any, infer M>

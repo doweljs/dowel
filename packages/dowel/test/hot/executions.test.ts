@@ -172,4 +172,28 @@ describe('executions across replacements', () => {
 		expect(app.get(Other)).toBe(2)
 		held.open()
 	})
+
+	test('a service a run created on demand is carried over when unchanged', async () => {
+		const Job = scope('job')
+		let created = 0
+		const Mailer = service('Mailer', () => ({ id: ++created }))
+		const Send = execution('Send', { scope: Job, entry: Mailer })
+		const Api = service(
+			'Api',
+			{ send: Send },
+			({ send }) =>
+				() =>
+					send((mailer) => mailer.id),
+		)
+		const Other = service('Other', () => 1)
+		await update('mail.ts', { Job, Mailer, Send, Api })
+		await update('other.ts', { Other })
+		const app = await container().provide(Api, Other).build()
+		expect(created).toBe(0)
+		expect(await app.get(Api)()).toBe(1)
+
+		await update('other.ts', { Other: service('Other', () => 2) })
+		expect(await app.get(Api)()).toBe(1)
+		expect(created).toBe(1)
+	})
 })

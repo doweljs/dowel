@@ -55,6 +55,18 @@ export interface ExecutionPlan extends PlanBase {
 	readonly inputs: readonly ExecutionInput[]
 	/** What each run's container initializes and requires: the part of `child` that `entry` reaches. */
 	readonly needs: ScopeNeeds
+	/**
+	 * What a run creates on demand in the scopes above `child` before opening
+	 * its container: the cached plans `entry` reaches there that nothing
+	 * provided does, by scope from the root down.
+	 */
+	readonly lazy: readonly LazyNeeds[]
+}
+
+/** Cached plans a run creates on demand in the store at `depth`, in dependency order. */
+export interface LazyNeeds {
+	readonly depth: number
+	readonly order: readonly CachedPlan[]
 }
 
 export type Plan = ServicePlan | ManyPlan | ValuePlan | ScopeValuePlan | ExecutionPlan
@@ -67,8 +79,8 @@ export function isCached(plan: Plan): plan is CachedPlan {
 }
 
 /**
- * What opening a container initializes and requires: the whole scope for
- * `open()`, or the part of it an execution's entry reaches.
+ * What opening a container initializes and requires: for `open()`, what the
+ * provided nodes reach in the scope; for a run, what its entry reaches there.
  */
 export interface ScopeNeeds {
 	/** Cached plans in the scope, in dependency order. */
@@ -86,7 +98,9 @@ export interface ScopePlan {
 	readonly values: ReadonlyMap<string, ScopeValuePlan>
 	/** Slots in this scope whose value build() decides, by name; open() cannot supply them. */
 	readonly bound: ReadonlySet<string>
-	/** What `open()` initializes and requires: everything in the scope. */
+	/** Every cached plan in the scope, in dependency order, whether created eagerly or on demand. */
+	readonly cached: readonly CachedPlan[]
+	/** What `open()` initializes and requires: what the provided nodes reach, outside executions. */
 	readonly needs: ScopeNeeds
 }
 
@@ -97,6 +111,7 @@ export function emptyScopePlan(scope: ScopeNode): ScopePlan {
 		cells: 0,
 		values: new Map(),
 		bound: new Set(),
+		cached: [],
 		needs: { order: [], required: new Set() },
 	}
 }
@@ -131,4 +146,6 @@ export interface Compiled {
 	readonly graph: readonly GraphNode[]
 	/** Scope plans by scope name. Always contains `root`. */
 	readonly scopes: ReadonlyMap<string, ScopePlan>
+	/** Plans created with their container, and so resolvable with `get()`: what the roots reach outside executions. */
+	readonly eager: ReadonlySet<Plan>
 }

@@ -29,7 +29,8 @@ export async function replaceGeneration(access: HotAccess): Promise<Committed> {
 	// Carry unchanged instances into the proposal's store; the rest will be replaced.
 	const rootPlan = next.scopes.get(ROOT.name)!
 	const nextByKey = new Map<string, CachedPlan>()
-	for (const plan of rootPlan.needs.order) nextByKey.set(planKey(plan), plan)
+	// Instances created on demand are carried too, so a run does not create them again.
+	for (const plan of rootPlan.cached) nextByKey.set(planKey(plan), plan)
 	const oldRoot = access.root
 	const root = newStore(ROOT, rootPlan.cells, oldRoot.owned)
 	// Carried records are shared by both stores until the commit re-points them at their new plan.

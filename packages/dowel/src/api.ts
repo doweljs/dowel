@@ -186,15 +186,20 @@ export interface Container<
 	/** Slots supplied to `open()` for this container and those it was opened from. */
 	Supplied extends string = never,
 > extends AsyncDisposable {
-	/** Resolve a node visible from this scope. Always synchronous. */
+	/**
+	 * Resolve a node visible from this scope that the container created with
+	 * itself: one provided, or reached from one outside an execution. Always
+	 * synchronous.
+	 */
 	get<N extends AnyService | AnySlot | AnyExecution>(
 		node: Resolvable<N, S, Current>,
 	): GetResult<N, S, Supplied>
 
 	/**
 	 * Open a container for a child scope. Required slots of that scope must be
-	 * supplied as value bindings. Everything in that scope is
-	 * initialized before the promise resolves; on failure it is disposed first.
+	 * supplied as value bindings. What the provided nodes reach in that scope
+	 * is initialized before the promise resolves; on failure it is disposed
+	 * first. What only executions reach is created when a run needs it.
 	 */
 	open<Sc extends AnyScope, const B extends readonly AnyBinding[]>(
 		scope: Sc & DeclaredScope<Sc> & ChildCheck<Current, Sc> & OpenCheck<S, MetaOf<Sc>['name'], B>,

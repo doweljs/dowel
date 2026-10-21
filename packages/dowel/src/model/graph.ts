@@ -97,6 +97,21 @@ export type Reach<G extends Graph, S extends string, Seen extends string = never
 	? Seen
 	: Reach<G, Exclude<EntryOf<G, S>['deps'], Seen | S>, Seen | S>
 
+/**
+ * The names a container creates with itself: those reachable from `S`
+ * without entering an execution's entry, since runs create what that reaches
+ * on demand.
+ */
+export type ReachEager<G extends Graph, S extends string, Seen extends string = never> = [
+	S,
+] extends [never]
+	? Seen
+	: ReachEager<
+			G,
+			Exclude<Exclude<EntryOf<G, S>, { readonly kind: 'execution' }>['deps'], Seen | S>,
+			Seen | S
+		>
+
 /** Names that reachable services and executions depend on non-optionally. */
 // Narrow R here rather than making recursive traversal results prove a string constraint.
 export type RequiredBy<G extends Graph, R> = R extends keyof G

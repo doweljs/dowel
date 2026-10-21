@@ -96,6 +96,11 @@ export interface NotProvided<Name extends string> {
 	readonly 'dowel: this node is not reachable from what the container provides': Name
 }
 
+/** `get()` was called with a node only an execution reaches, which runs create on demand. */
+export interface CreatedOnDemand<Name extends string> {
+	readonly 'dowel: this node is reached only through an execution, so get() cannot return it; provide it to create it with the container': Name
+}
+
 /** A node lives in a scope the current container cannot see. */
 export interface NotVisible<Name extends string, Scope extends string> {
 	readonly 'dowel: this node lives in a deeper or unrelated scope; resolve it from a container opened for': {

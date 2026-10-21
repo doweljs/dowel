@@ -94,6 +94,31 @@ export async function initialize(order: readonly CachedPlan[], chain: Chain): Pr
 }
 
 /**
+ * Creates plans in a store shared beyond one run, on demand: the instances
+ * belong to that store, which keeps them for later runs and disposes them
+ * with itself. Unlike `initialize`, a failure does not stop the store from
+ * starting factories, since others share it; the failed plan is created again
+ * on the next demand.
+ */
+async function createShared(order: readonly CachedPlan[], chain: Chain): Promise<void> {
+	const started: Promise<unknown>[] = []
+	const failures: unknown[] = []
+	for (const plan of order) {
+		try {
+			const result = init(plan, chain)
+			if (isPromiseLike(result)) {
+				started.push(Promise.resolve(result).then(undefined, (error) => void failures.push(error)))
+			}
+		} catch (error) {
+			failures.push(error)
+			break
+		}
+	}
+	await Promise.all(started)
+	if (failures.length > 0) throw initializationError(failures)
+}
+
+/**
  * The first failure in time, which is the cause, with what later failures
  * add: their own errors and cleanup failures, but neither the cancellations
  * the first caused nor the same error again as a dependent reported it.
@@ -353,6 +378,8 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 		)
 	}
 	const bindings = inputBindings(plan, values)
+	// What the entry reaches above the run's scope that nothing provided created, shallowest scope first.
+	for (const { depth, order } of plan.lazy) await createShared(order, base.slice(0, depth + 1))
 	const controller = new AbortController()
 	// The parent owns the run, not just its container: disposing the parent aborts the run's
 	// signal and waits for the body before the run's container, and then the parent, are disposed.

@@ -132,12 +132,13 @@ const infrastructure = <S extends ContainerState>(b: ContainerBuilder<S>) =>
 container().with(infrastructure).bind(Config, config).provide(Checkout).build()
 ```
 
-`get()` is typed against what the container can reach:
+`get()` is typed against what the container creates:
 
 ```ts
 app.get(Users) // UsersApi
 app.get(Mailer) // error: NotProvided<"Mailer">
 app.get(Current) // error: NotVisible<"Current", "request">
+app.get(Smtp) // error: CreatedOnDemand<"Smtp">, reached only through an execution
 ```
 
 Overrides are exact. Override `Db` with a fake, and nothing that only `Db` needed is required any more; `get(Db)` returns the fake.
@@ -154,7 +155,7 @@ request.get(Users) // root-scope services are shared
 
 **Always dispose what `open()` returns**, with `await using` or in a `finally`. A container keeps every container opened from it until they are disposed, so that disposing the app can still close them. One dropped without being disposed stays in memory, with everything it created, until its parent is disposed.
 
-Everything in a scope is created when its container opens, not when first resolved; that is what keeps `get()` synchronous. Keep factories in short-lived scopes cheap, and free of side effects a request may not need.
+What the provided nodes reach in a scope is created when its container opens, not when first resolved; that is what keeps `get()` synchronous. Keep factories in short-lived scopes cheap, and free of side effects a request may not need. What only an execution reaches is created by the first run that needs it (see [Executions](#executions)).
 
 Scopes nest. Declare them as values, give slots a scope, and open containers one scope at a time:
 
@@ -202,6 +203,8 @@ Each call to the runner:
 1. opens a container for the execution's scope, with the inputs it was given;
 2. resolves the entry and hands it to the body;
 3. disposes the container once the body settles, whether it returned or threw.
+
+What the entry reaches in the scopes above the run's, and that nothing provided reaches outside an execution, is created on demand: the first run that needs it creates it, in the store of the scope it lives in, which shares it with later runs and disposes it with itself. Concurrent runs share one creation, and one that fails is created again on the next demand, so a misconfigured service fails the runs that need it rather than `build()`. `get()` can't return such a service; provide it to create it with the container, and to have `build()` fail fast when it can't start.
 
 The runner takes an object with a value for each input, typed from `inputs`. An execution without inputs takes only the body. `build()` isn't callable while the inputs don't cover what the entry needs: `IncompleteExecutions<{ RunJob: "Other" }>`.
 
