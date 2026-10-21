@@ -232,4 +232,50 @@ describe('executions across replacements', () => {
 		expect(await app.get(Api)()).toBe(1)
 		expect(created).toBe(1)
 	})
+
+	test('an instance created on demand during an update is not carried over with a replaced dependency', async () => {
+		const Job = scope('job')
+		const Db = service('Db', (ctx) => {
+			const db = { closed: false }
+			ctx.defer(() => {
+				db.closed = true
+			})
+			return db
+		})
+		const Repo = service('Repo', { db: Db }, ({ db }) => ({ db }))
+		const Query = execution('Query', { scope: Job, entry: Repo })
+		const Api = service(
+			'Api',
+			{ query: Query },
+			({ query }) =>
+				() =>
+					query((repo) => repo.db),
+		)
+		const Other = service('Other', () => 1)
+		await update('repo.ts', { Job, Db, Repo, Query, Api })
+		await update('other.ts', { Other })
+		const app = await container().provide(Api, Other).build()
+
+		// Other now depends on Db, so the proposal creates its own Db eagerly.
+		const held = gate()
+		const initializing = gate()
+		const updating = update('other.ts', {
+			Other: service('Other', { db: Db }, async () => {
+				initializing.open()
+				await held.promise
+				return 2
+			}),
+		})
+		await initializing.promise
+		// Meanwhile a run creates Db and Repo on demand in the committed generation.
+		const old = await app.get(Api)()
+		held.open()
+		await updating
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		expect(old.closed).toBe(true)
+		// Repo was created anew with the new generation's Db, not carried with the closed one.
+		const current = await app.get(Api)()
+		expect(current.closed).toBe(false)
+		expect(current).not.toBe(old)
+	})
 })

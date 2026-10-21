@@ -255,21 +255,25 @@ type Check<Name extends string, N, S extends ContainerState, Current extends Sco
 	Name extends ReachEager<S['graph'], S['roots']>
 		? VisibleCheck<Name, N, S, Current>
 		: Name extends Reachable<S>
-			? EntryOf<S['graph'], Name>['kind'] extends CreatedKind
-				? CreatedOnDemand<Name>
-				: VisibleCheck<Name, N, S, Current>
+			? VisibleCheck<
+					Name,
+					EntryOf<S['graph'], Name>['kind'] extends CreatedKind ? CreatedOnDemand<Name> : N,
+					S,
+					Current
+				>
 			: NotProvided<Name>
 
 /** Entries resolving which creates an instance; the rest are values or runners. */
 type CreatedKind = 'service' | 'many' | 'bound' | 'alias'
 
+/** `Then` if `Name` is visible from `Current`, which is checked first. */
 type VisibleCheck<
 	Name extends string,
-	N,
+	Then,
 	S extends ContainerState,
 	Current extends ScopeMeta,
 > = EntryOf<S['graph'], Name>['scope'] extends Current['name'] | Current['above']
-	? N
+	? Then
 	: NotVisible<Name, EntryOf<S['graph'], Name>['scope']>
 
 export type Resolvable<N, S extends ContainerState, Current extends ScopeMeta> =

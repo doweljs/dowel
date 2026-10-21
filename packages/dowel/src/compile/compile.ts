@@ -28,7 +28,6 @@ import type {
 	ExecutionPlan,
 	GraphNode,
 	ImplInfo,
-	LazyNeeds,
 	ManyPlan,
 	Plan,
 	PlanDep,
@@ -38,6 +37,7 @@ import type {
 	ServicePlan,
 	ValuePlan,
 } from './plan.ts'
+import { isCached } from './plan.ts'
 
 /** Everything a builder accumulates. Immutable once a container is built from it. */
 export interface Composition {
@@ -65,11 +65,6 @@ interface ScopeDraft extends ScopePlan {
 	readonly needs: { readonly order: CachedPlan[]; readonly required: Set<string> }
 }
 
-/** Lazy needs while compilation still decides which of them are created eagerly. */
-interface LazyDraft extends LazyNeeds {
-	readonly order: CachedPlan[]
-}
-
 const identity: Canonicalize = (node) => node
 
 export function compile(composition: Composition, options: CompileOptions = {}): Compiled {
@@ -94,8 +89,6 @@ class Compiler {
 	/** Names on the current dependency path, for cycle detection and messages. */
 	private readonly path: string[] = []
 	private readonly visiting = new Set<number>()
-	/** Each execution's lazy needs, narrowed once compilation knows what is created eagerly. */
-	private readonly lazy: LazyDraft[][] = []
 
 	constructor(
 		composition: Composition,
@@ -143,10 +136,6 @@ class Compiler {
 		const eager = this.eagerPlans()
 		for (const draft of this.scopes.values()) {
 			draft.needs.order.push(...draft.cached.filter((plan) => eager.has(plan)))
-		}
-		for (const groups of this.lazy) {
-			for (const group of groups) retain(group.order, (plan) => !eager.has(plan))
-			retain(groups, (group) => group.order.length > 0)
 		}
 
 		for (const target of this.serviceOverrides.keys()) {
@@ -402,9 +391,8 @@ class Compiler {
 				`Execution '${declared.name}' runs in scope '${runs}' but its entry '${entry.name}' lives in '${lives}', which is not visible from there.`,
 			)
 		}
-		const { needs, lazy } = this.needsOf(entry, childDraft)
+		const needs = this.needsOf(entry, childDraft)
 		assertSupplied(declared, needs, slots)
-		this.lazy.push(lazy)
 
 		const plan: ExecutionPlan = {
 			kind: 'execution',
@@ -416,7 +404,6 @@ class Compiler {
 			child: childDraft,
 			inputs,
 			needs,
-			lazy,
 		}
 		const edges = [
 			{ key: 'entry', id: entryNode.id },
@@ -504,15 +491,15 @@ class Compiler {
 	}
 
 	/**
-	 * What a run at `scope` needs to resolve `entry`: the cached plans in its
-	 * own store that `entry` reaches, the scoped slots there it reaches through
-	 * required dependencies, and the cached plans in the scopes above that the
-	 * run resolves itself, of which compilation later keeps those not created
-	 * eagerly. A nested execution whose scopes open at `scope` or above
-	 * resolves those from its own store, so it is not followed; above its
-	 * scope, a nested run creates what only its entry reaches.
+	 * What a run at `scope` needs to resolve `entry`: the entry itself, whose
+	 * creation creates what it reaches, in the run's store and, if nothing
+	 * did yet, in the stores above; and the scoped slots of the run's scope it
+	 * reaches through required dependencies. Nested runs create what their
+	 * own entries reach, but a nested execution whose scopes open at `scope`
+	 * or above resolves its slots from the run's store, so it is followed for
+	 * those.
 	 */
-	private needsOf(entry: Plan, scope: ScopePlan): { needs: ScopeNeeds; lazy: LazyDraft[] } {
+	private needsOf(entry: Plan, scope: ScopePlan): ScopeNeeds {
 		const { depth } = scope.scope
 		const reached = new Set<Plan>()
 		const required = new Set<string>()
@@ -527,31 +514,8 @@ class Compiler {
 			for (const dep of current.deps) walk(dep.plan, dep.optional)
 		}
 		walk(entry, false)
-		const order = scope.cached.filter((plan) => reached.has(plan))
-		// Above its scope, the run creates what its entry and own instances resolve, not what nested entries do.
-		const resolved = new Set<Plan>()
-		const resolve = (current: Plan): void => {
-			if (resolved.has(current)) return
-			resolved.add(current)
-			if (current.kind === 'execution') return
-			for (const dep of current.deps) resolve(dep.plan)
-		}
-		resolve(entry)
-		for (const plan of order) resolve(plan)
-		const lazy: LazyDraft[] = []
-		for (let above = scope.scope.parent; above !== null; above = above.parent) {
-			const created = this.scopeDraft(above).cached.filter((plan) => resolved.has(plan))
-			lazy.unshift({ depth: above.depth, order: created })
-		}
-		return { needs: { order, required }, lazy }
+		return { order: isCached(entry) ? [entry] : [], required }
 	}
-}
-
-/** Keeps the items of `items` that satisfy `keep`, in place. */
-function retain<T>(items: T[], keep: (item: T) => boolean): void {
-	let kept = 0
-	for (const item of items) if (keep(item)) items[kept++] = item
-	items.length = kept
 }
 
 function valuePlan(name: string, scope: ScopeNode, value: unknown): ValuePlan {

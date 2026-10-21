@@ -10,7 +10,6 @@ import {
 	type CachedPlan,
 	type ExecutionPlan,
 	isCached,
-	type LazyNeeds,
 	type Plan,
 	type ScopeNeeds,
 	type ScopePlan,
@@ -63,65 +62,26 @@ export function resolve(plan: Plan, chain: Chain): unknown {
 }
 
 /**
- * Initializes a scope's cached plans in dependency order. Independent async
- * factories start concurrently. The first failure, synchronous or not, stops
- * what has not started and aborts the signals of what is still running; once
- * everything started has settled, it is thrown with what later failures add,
- * and the caller disposes what was created.
+ * Initializes a scope's cached plans in dependency order, and what they reach
+ * above it that nothing created yet. Independent async factories start
+ * concurrently. The first failure, synchronous or not, stops what has not
+ * started and aborts the signals of what is still running; once everything
+ * started has settled, it is thrown with what later failures add, and the
+ * caller disposes what was created.
  */
 export async function initialize(order: readonly CachedPlan[], chain: Chain): Promise<void> {
 	const store = chain[chain.length - 1]!
+	const started: Promise<unknown>[] = []
 	const failures: unknown[] = []
-	const started = startAll(order, chain, (error) => {
+	const fail = (error: unknown): void => {
 		failures.push(error)
 		if (failures.length === 1) cancelStarting(store)
-	})
-	await Promise.allSettled(started)
-	if (failures.length > 0) throw initializationError(failures)
-}
-
-/**
- * Creates what a run reaches in the stores above its own, on demand, a scope
- * at a time from the root down: the instances belong to those stores, which
- * keep them for later runs and dispose them with themselves. Unlike
- * `initialize`, a failure does not stop a store from starting factories,
- * since others share it; the failed plan is created again on the next demand.
- * Returns nothing when everything exists already, as on every run after the first.
- */
-function createShared(
-	lazy: readonly LazyNeeds[],
-	chain: Chain,
-	from = 0,
-): Promise<void> | undefined {
-	for (let i = from; i < lazy.length; i++) {
-		const failures: unknown[] = []
-		const started = startAll(lazy[i]!.order, chain, (error) => void failures.push(error))
-		if (started.length === 0 && failures.length === 0) continue
-		// Deeper scopes may depend on what this one is still creating.
-		return Promise.allSettled(started).then(() => {
-			if (failures.length > 0) throw initializationError(failures)
-			return createShared(lazy, chain, i + 1)
-		})
 	}
-	return undefined
-}
-
-/**
- * Starts creating each plan, in order, that is neither created nor in
- * flight, and returns what is still in flight. Failures go to `fail`; a
- * synchronous one stops the rest from starting.
- */
-function startAll(
-	order: readonly CachedPlan[],
-	chain: Chain,
-	fail: (error: unknown) => void,
-): Promise<unknown>[] {
-	const started: Promise<unknown>[] = []
 	for (const plan of order) {
 		try {
 			const result = init(plan, chain)
 			if (isPromiseLike(result)) {
-				const promise = Promise.resolve(result)
+				const promise = joined(Promise.resolve(result), plan, store)
 				promise.then(undefined, fail)
 				started.push(promise)
 			}
@@ -130,7 +90,28 @@ function startAll(
 			break
 		}
 	}
-	return started
+	await Promise.allSettled(started)
+	if (failures.length > 0) throw initializationError(failures)
+}
+
+/**
+ * What `waiter`'s store waits for while `plan` is created. A store above
+ * shares what it creates, so a waiter that stops starting services stops
+ * waiting for it instead of cancelling it, and leaves it to the store that
+ * owns it.
+ */
+function joined<T>(promise: Promise<T>, plan: CachedPlan, waiter: Store): Promise<T> {
+	if (plan.scope === waiter.scope) return promise
+	const reason = (): unknown =>
+		cancellation(
+			`Scope '${waiter.scope.name}' stopped starting services, so it no longer waits for '${plan.name}' in scope '${plan.scope.name}'.`,
+		)
+	if (waiter.cancelled) return Promise.reject(reason())
+	return new Promise<T>((resolve, reject) => {
+		const stop = (): void => reject(reason())
+		waiter.onStop.add(stop)
+		promise.then(resolve, reject).finally(() => waiter.onStop.delete(stop))
+	})
 }
 
 /**
@@ -160,8 +141,6 @@ export interface OpenedStore extends Child {
 
 /** How the owner of an opened store takes part in opening and disposing it. */
 export interface OpenOptions {
-	/** Created on demand in the stores of `chain` before the store's own instances. */
-	readonly lazy?: readonly LazyNeeds[]
 	/** Runs when disposal of the store or an owner starts. */
 	readonly onCancel?: () => void
 	/** Runs before the store's instances are disposed. */
@@ -170,16 +149,15 @@ export interface OpenOptions {
 
 /**
  * Opens a store at `scopePlan` under the last store of `chain`: supplies the
- * bindings, registers it with its parent, creates what `lazy` lists above it
- * and initializes what `needs` lists. On failure the store is disposed before
- * the promise rejects.
+ * bindings, registers it with its parent and initializes what `needs` lists.
+ * On failure the store is disposed before the promise rejects.
  */
 export async function openStore(
 	chain: Chain,
 	scopePlan: ScopePlan,
 	bindings: readonly BindingNode[],
 	needs: ScopeNeeds,
-	{ lazy = [], onCancel, beforeDisposal }: OpenOptions = {},
+	{ onCancel, beforeDisposal }: OpenOptions = {},
 ): Promise<OpenedStore> {
 	// A store being disposed may already have disposed its children, so nothing may open under it.
 	if (chain.some((store) => store.disposed)) {
@@ -193,15 +171,12 @@ export async function openStore(
 	supply(scopePlan, store, bindings, needs.required)
 	let disposal: Promise<void> | null = null
 	let cancelled = false
-	// Set while it waits for shared creation, which a cancellation stops it waiting for.
-	let stopWaiting: ((reason: unknown) => void) | null = null
 	const opened: OpenedStore = {
 		chain: [...chain, store],
 		cancel: () => {
 			// Once is enough: what opens beneath it later is cancelled when disposal reaches it.
 			if (cancelled) return
 			cancelled = true
-			stopWaiting?.(cancellation(`Scope '${scopePlan.scope.name}' is being disposed.`))
 			onCancel?.()
 			cancelStore(store)
 		},
@@ -222,16 +197,6 @@ export async function openStore(
 	parent.children.add(opened)
 	await withCleanup(
 		async () => {
-			const shared = createShared(lazy, chain)
-			if (shared !== undefined) {
-				// Shared creation belongs to the stores above: cancelled, this one stops waiting and leaves it running.
-				await new Promise<void>((resolve, reject) => {
-					if (cancelled) reject(cancellation(`Scope '${scopePlan.scope.name}' is being disposed.`))
-					stopWaiting = reject
-					shared.then(resolve, reject)
-				})
-				stopWaiting = null
-			}
 			try {
 				await initialize(needs.order, opened.chain)
 			} catch (error) {
@@ -275,20 +240,21 @@ function init(plan: CachedPlan, chain: Chain): unknown {
 		controller: null,
 	}
 	store.starting.add(record)
-	// Dependencies at the same scope may still be initializing (async) and are joined; any
-	// other value, a bound promise included, reaches the factory as it is.
+	// Cached dependencies are created if nothing did yet, here or in a store above (on
+	// demand), and joined while they initialize; any other value, a bound promise included,
+	// reaches the factory as it is.
 	const values = new Array<unknown>(plan.deps.length)
 	const waiting: Promise<void>[] = []
 	for (let i = 0; i < plan.deps.length; i++) {
 		const dep = plan.deps[i]!.plan
-		if (!isCached(dep) || dep.scope !== plan.scope) {
+		if (!isCached(dep)) {
 			values[i] = resolve(dep, chain)
 			continue
 		}
 		const value = init(dep, chain)
 		if (isPromiseLike(value)) {
 			waiting.push(
-				Promise.resolve(value).then((ready) => {
+				joined(Promise.resolve(value), dep, store).then((ready) => {
 					values[i] = ready
 				}),
 			)
@@ -424,8 +390,6 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 	const notStarted = (): DowelError =>
 		cancellation(`Execution '${name}' was disposed before its body started.`)
 	const opened = await openStore(base, plan.child, bindings, plan.needs, {
-		// What the entry reaches above the run's scope that nothing provided created.
-		lazy: plan.lazy,
 		onCancel: () => {
 			if (phase !== 'settled')
 				controller.abort(cancellation(`Execution '${name}' is being disposed.`))

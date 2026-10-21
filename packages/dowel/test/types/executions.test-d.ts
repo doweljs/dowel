@@ -9,13 +9,14 @@ import {
 	execution,
 	type IncompleteExecutions,
 	type Infer,
+	type NotVisible,
 	type RunContext,
 	scope,
 	service,
 	slot,
 } from '../../src/index.ts'
 import type { MetaOf } from '../../src/model/infer.ts'
-import { Logger, Request, test } from './support.ts'
+import { Logger, PerRequest, Request, test } from './support.ts'
 
 test('executions', () => {
 	const JobScope = scope('job')
@@ -189,4 +190,15 @@ test('get() still accepts values only an execution reaches', async () => {
 	expectTypeOf(app.get(Config)).toEqualTypeOf<{ url: string }>()
 	// @ts-expect-error: a service, which runs create
 	app.get(Uses)
+})
+
+test('get() reports visibility before on-demand creation', async () => {
+	const Task = scope('task', PerRequest)
+	const Audit = service('Audit', { request: Request }, ({ request }) => request.url)
+	const Record = execution('Record', { scope: Task, entry: Audit })
+	const Handler = service('Handler', { request: Request, record: Record }, () => ({}))
+	const app = await container().provide(Handler).build()
+	expectTypeOf<Parameters<typeof app.get<typeof Audit>>[0]>().toEqualTypeOf<
+		NotVisible<'Audit', 'request'>
+	>()
 })

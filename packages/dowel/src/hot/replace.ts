@@ -4,7 +4,13 @@
  * commit.
  */
 
-import type { CachedPlan, Compiled, ExecutionPlan, Plan } from '../compile/plan.ts'
+import {
+	type CachedPlan,
+	type Compiled,
+	type ExecutionPlan,
+	isCached,
+	type Plan,
+} from '../compile/plan.ts'
 import { withCleanup } from '../errors.ts'
 import { ROOT } from '../nodes/node.ts'
 import { disposeStore } from '../runtime/dispose.ts'
@@ -35,16 +41,24 @@ export async function replaceGeneration(access: HotAccess): Promise<Committed> {
 	const root = newStore(ROOT, rootPlan.cells, oldRoot.owned)
 	// Carried records are shared by both stores until the commit re-points them at their new plan.
 	const carried = new Map<InstanceRecord, CachedPlan>()
+	const carriedPlans = new Set<Plan>()
+	// Records come in creation order, so an instance's dependencies were considered before it.
+	const carriable = (plan: CachedPlan): boolean =>
+		isUnchanged(plan) &&
+		// The proposal may have created one itself meanwhile, if it now creates it eagerly.
+		root.cells[plan.cell] === UNSET &&
+		// One the proposal created anew must not be left holding the instance it replaces.
+		plan.deps.every((dep) => !isCached(dep.plan) || carriedPlans.has(dep.plan))
 	let seen = 0
 	const carryNew = (): void => {
 		for (; seen < oldRoot.records.length; seen++) {
 			const record = oldRoot.records[seen]!
 			const plan = nextByKey.get(planKey(record.plan))
-			// The proposal may have created one itself meanwhile, if it now creates it eagerly.
-			if (plan !== undefined && isUnchanged(plan) && root.cells[plan.cell] === UNSET) {
+			if (plan !== undefined && carriable(plan)) {
 				root.cells[plan.cell] = oldRoot.cells[record.plan.cell]
 				root.records.push(record)
 				carried.set(record, plan)
+				carriedPlans.add(plan)
 			}
 		}
 	}

@@ -53,20 +53,11 @@ export interface ExecutionPlan extends PlanBase {
 	readonly child: ScopePlan
 	/** The slots each run supplies, by the key the runner takes each value by. */
 	readonly inputs: readonly ExecutionInput[]
-	/** What each run's container initializes and requires: the part of `child` that `entry` reaches. */
-	readonly needs: ScopeNeeds
 	/**
-	 * What a run creates on demand in the scopes above `child` before opening
-	 * its container: the cached plans `entry` reaches there that nothing
-	 * provided does, by scope from the root down.
+	 * What each run's container initializes and requires: the entry, whose
+	 * creation creates what it reaches, and the slots of `child` it needs.
 	 */
-	readonly lazy: readonly LazyNeeds[]
-}
-
-/** Cached plans a run creates on demand in the store at `depth`, in dependency order. */
-export interface LazyNeeds {
-	readonly depth: number
-	readonly order: readonly CachedPlan[]
+	readonly needs: ScopeNeeds
 }
 
 export type Plan = ServicePlan | ManyPlan | ValuePlan | ScopeValuePlan | ExecutionPlan
@@ -80,10 +71,10 @@ export function isCached(plan: Plan): plan is CachedPlan {
 
 /**
  * What opening a container initializes and requires: for `open()`, what the
- * provided nodes reach in the scope; for a run, what its entry reaches there.
+ * provided nodes reach in the scope; for a run, its entry.
  */
 export interface ScopeNeeds {
-	/** Cached plans in the scope, in dependency order. */
+	/** Cached plans to create, in dependency order; creating one creates what it reaches. */
 	readonly order: readonly CachedPlan[]
 	/** Scoped slots in the scope that must be supplied, by name. */
 	readonly required: ReadonlySet<string>

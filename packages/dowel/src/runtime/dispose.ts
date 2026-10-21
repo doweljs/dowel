@@ -79,10 +79,13 @@ export function markDisposed(record: InstanceRecord): void {
 /**
  * Stops a store from starting factories, and aborts the signals of those
  * still running. A signal not yet read is created aborted, so a factory that
- * reads `ctx.signal` later sees it aborted.
+ * reads `ctx.signal` later sees it aborted. What it waits for in stores above
+ * keeps running for whoever else shares it; the store just stops waiting.
  */
 export function cancelStarting(store: Store): void {
 	store.cancelled = true
+	for (const stop of store.onStop) stop()
+	store.onStop.clear()
 	for (const record of store.starting) {
 		record.controller ??= new AbortController()
 		abortSignal(record)

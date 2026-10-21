@@ -197,4 +197,66 @@ describe('services reached only through executions', () => {
 			'bad credentials',
 		)
 	})
+
+	test("a run leaves to a nested run what only the nested entry reaches in the run's own scope", async () => {
+		let attempts = 0
+		const Smtp = service('Smtp', { to: To }, ({ to }) => {
+			attempts++
+			if (to === 'bad') throw new Error('bad credentials')
+			return { send: () => `mailed ${to}` }
+		})
+		const Sub = scope('sub', JobScope)
+		const Mail = execution('Mail', { scope: Sub, entry: Smtp })
+		const Worker = service('Worker', { mail: Mail, to: To }, ({ mail, to }) => ({
+			report: () => `report for ${to}`,
+			mail: () => mail((smtp) => smtp.send()),
+		}))
+		const Work = execution('Work', { scope: JobScope, entry: Worker, inputs: { to: To } })
+		const app = await container().provide(Work).build()
+		expect(await app.get(Work)({ to: 'bad' }, (worker) => worker.report())).toBe('report for bad')
+		expect(attempts).toBe(0)
+		// Created in the outer run's store, which the nested runs share.
+		expect(
+			await app.get(Work)({ to: 'a' }, async (worker) => [
+				await worker.mail(),
+				await worker.mail(),
+			]),
+		).toEqual(['mailed a', 'mailed a'])
+		expect(attempts).toBe(1)
+	})
+
+	test('what a run creates on demand in different scopes starts at once', async () => {
+		const poolStarted = gate()
+		const poolReady = gate()
+		const auditStarted = gate()
+		const Pool = service('Pool', async () => {
+			poolStarted.open()
+			await poolReady.promise
+			return 'pool'
+		})
+		const Audit = service('Audit', { request: Request }, async ({ request }) => {
+			auditStarted.open()
+			return request.url
+		})
+		const Task = scope('task', PerRequest)
+		const Both = service('Both', { pool: Pool, audit: Audit }, (deps) => deps)
+		const Query = execution('Query', { scope: Task, entry: Both })
+		const Handler = service('Handler', { request: Request, query: Query }, ({ query }) => query)
+		const app = await container().provide(Handler).build()
+		const request = await app.open(PerRequest, bind(Request, { url: '/a' }))
+		const running = request.get(Handler)((both) => both)
+		// The request-scoped service does not wait for the slow root one to finish.
+		await Promise.all([poolStarted.promise, auditStarted.promise])
+		poolReady.open()
+		expect(await running).toEqual({ pool: 'pool', audit: '/a' })
+	})
+
+	test('get() reports a service in a scope it cannot see as not visible, before anything else', async () => {
+		const Task = scope('task', PerRequest)
+		const Audit = service('Audit', { request: Request }, ({ request }) => request.url)
+		const Record = execution('Record', { scope: Task, entry: Audit })
+		const Handler = service('Handler', { request: Request, record: Record }, () => ({}))
+		const app = await container().provide(Handler).build()
+		expect(() => untyped(app).get(Audit)).toThrow(/not visible from 'root'/)
+	})
 })
