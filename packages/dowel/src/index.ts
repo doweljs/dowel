@@ -4,6 +4,7 @@ export type {
 	NodeBinding,
 	NodeInfo,
 	RunContext,
+	RunOptions,
 	ServiceContext,
 } from './api.ts'
 export { container } from './container.ts'

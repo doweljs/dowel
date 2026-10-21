@@ -118,20 +118,28 @@ export interface OpenedStore extends Child {
 	readonly chain: Chain
 }
 
+/** How the owner of an opened store takes part in its lifecycle. */
+export interface OpenOptions {
+	/** Abandons the opening: nothing more starts, and it rejects with the signal's reason. */
+	readonly signal?: AbortSignal | undefined
+	/** Runs when disposal of the store or an owner starts. */
+	readonly onCancel?: () => void
+	/** Runs before the store's instances are disposed. */
+	readonly beforeDisposal?: () => Promise<void>
+}
+
 /**
  * Opens a store at `scopePlan` under the last store of `chain`: supplies the
  * bindings, registers it with its parent and initializes what `needs` lists.
- * `onCancel` runs when disposal of it or an owner starts, and `beforeDisposal`
- * before its instances are disposed. On failure the store is disposed before
- * the promise rejects.
+ * On failure, or once `signal` aborts, the store is disposed before the
+ * promise rejects.
  */
 export async function openStore(
 	chain: Chain,
 	scopePlan: ScopePlan,
 	bindings: readonly BindingNode[],
 	needs: ScopeNeeds,
-	onCancel?: () => void,
-	beforeDisposal?: () => Promise<void>,
+	{ signal, onCancel, beforeDisposal }: OpenOptions = {},
 ): Promise<OpenedStore> {
 	// A store being disposed may already have disposed its children, so nothing may open under it.
 	if (chain.some((store) => store.disposed)) {
@@ -140,6 +148,7 @@ export async function openStore(
 			`Scope '${scopePlan.scope.name}' cannot be opened because the container it would open from has been disposed.`,
 		)
 	}
+	signal?.throwIfAborted()
 	const parent = chain[chain.length - 1]!
 	const store = newStore(scopePlan.scope, scopePlan.cells, parent.owned)
 	supply(scopePlan, store, bindings, needs.required)
@@ -165,10 +174,26 @@ export async function openStore(
 		},
 	}
 	parent.children.add(opened)
-	await withCleanup(
-		() => initialize(needs.order, opened.chain),
-		() => opened.dispose(),
-	)
+	// Only this store's factories stop: instances above it may be shared with other callers.
+	const stop = (): void => cancelStarting(store)
+	signal?.addEventListener('abort', stop)
+	try {
+		await withCleanup(
+			async () => {
+				try {
+					await initialize(needs.order, opened.chain)
+				} catch (error) {
+					// A factory that failed because the signal aborted reports the abort instead.
+					signal?.throwIfAborted()
+					throw error
+				}
+				signal?.throwIfAborted()
+			},
+			() => opened.dispose(),
+		)
+	} finally {
+		signal?.removeEventListener('abort', stop)
+	}
 	return opened
 }
 
@@ -328,7 +353,8 @@ function runner(plan: ExecutionPlan, chain: Chain): (...args: unknown[]) => Prom
 /** Runs once under `base`: opens the run's container, hands the entry to the body, and disposes the container. */
 async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): Promise<unknown> {
 	const { name } = plan
-	const [values, body] = plan.inputs.length === 0 ? [{}, args[0]] : [args[0], args[1]]
+	const [values, body, options] =
+		plan.inputs.length === 0 ? [{}, args[0], args[1]] : [args[0], args[1], args[2]]
 	if (typeof body !== 'function' || typeof values !== 'object' || values === null) {
 		throw new DowelError(
 			'INVALID_NODE',
@@ -337,6 +363,7 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 				: `Execution '${name}' must be called with an object of its inputs followed by a body function.`,
 		)
 	}
+	const signal = signalOption(name, options)
 	const bindings = inputBindings(plan, values)
 	const controller = new AbortController()
 	// The parent owns the run, not just its container: disposing the parent aborts the run's
@@ -344,39 +371,58 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 	let running: Promise<void> | null = null
 	// Set when disposal reaches the run before its body started; the body then never starts.
 	let skipped = false
-	const opened = await openStore(
-		base,
-		plan.child,
-		bindings,
-		plan.needs,
+	const opened = await openStore(base, plan.child, bindings, plan.needs, {
+		signal,
 		// A body that starts after this sees its signal aborted already.
-		() => controller.abort(cancellation(`Execution '${name}' is being disposed.`)),
-		async () => {
+		onCancel: () => controller.abort(cancellation(`Execution '${name}' is being disposed.`)),
+		beforeDisposal: async () => {
 			if (running === null) skipped = true
 			else await running
 		},
-	)
+	})
 	if (skipped) {
 		await opened.dispose()
 		throw cancellation(`Execution '${name}' was disposed before its body started.`)
 	}
-	const value = await withCleanup(
-		async () => {
-			const result = Promise.resolve(
-				body(resolve(plan.entry, opened.chain), { signal: controller.signal }),
-			)
-			running = result.then(noop, noop)
-			try {
-				return await result
-			} finally {
-				running = null
-			}
-		},
-		() => opened.dispose(),
-		`Execution '${name}'`,
+	// Once the body may start, the caller's signal aborts the body's and the run settles as the body does.
+	const forward = (): void => controller.abort(signal!.reason)
+	signal?.addEventListener('abort', forward)
+	// It may have aborted after opening finished.
+	if (signal?.aborted) forward()
+	try {
+		const value = await withCleanup(
+			async () => {
+				const result = Promise.resolve(
+					body(resolve(plan.entry, opened.chain), { signal: controller.signal }),
+				)
+				running = result.then(noop, noop)
+				try {
+					return await result
+				} finally {
+					running = null
+				}
+			},
+			() => opened.dispose(),
+			`Execution '${name}'`,
+		)
+		await opened.dispose()
+		return value
+	} finally {
+		signal?.removeEventListener('abort', forward)
+	}
+}
+
+/** The `signal` a run was called with, checked. */
+function signalOption(name: string, options: unknown): AbortSignal | undefined {
+	if (options === undefined) return undefined
+	if (typeof options === 'object' && options !== null) {
+		const { signal } = options as { signal?: unknown }
+		if (signal === undefined || signal instanceof AbortSignal) return signal
+	}
+	throw new DowelError(
+		'INVALID_NODE',
+		`Execution '${name}' was called with options that are not an object with an AbortSignal 'signal'.`,
 	)
-	await opened.dispose()
-	return value
 }
 
 /** Value bindings for a run's inputs, checked against the keys the execution declares. */

@@ -76,10 +76,22 @@ export interface ServiceContext {
 export interface RunContext {
 	/**
 	 * Aborted when the container the runner was resolved from is disposed while
-	 * the body runs. Disposal waits for the body to settle, so a long-running
-	 * body should stop when this aborts.
+	 * the body runs, or when the caller's `signal` aborts, with its reason.
+	 * Disposal waits for the body to settle, so a long-running body should stop
+	 * when this aborts.
 	 */
 	readonly signal: AbortSignal
+}
+
+/** What a caller may pass a runner after the body. */
+export interface RunOptions {
+	/**
+	 * Cancels the run. Aborted before the body starts, the run creates nothing
+	 * more, disposes what it created and rejects with the signal's reason.
+	 * Aborted while the body runs, it aborts the body's signal; the run still
+	 * waits for the body and settles as the body does.
+	 */
+	readonly signal?: AbortSignal
 }
 
 /** How a node's value arrives, as reported by `inspect()`. */

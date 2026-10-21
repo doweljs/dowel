@@ -207,6 +207,8 @@ The runner takes an object with a value for each input, typed from `inputs`. An 
 
 A run belongs to the container its runner was resolved from. Disposing that container aborts the `signal` the body receives as its second argument, as in `runJob({ job }, (runner, { signal }) => runner.run(signal))`. It then waits for the body to settle before disposing the run's container and its own instances, so a body never sees what it uses closed beneath it. A body that ignores the signal keeps disposal waiting. Disposal aborts every run beneath the container, in opened containers and nested runs included, before it waits for any of them, so a run that waits on another during shutdown doesn't deadlock. A run disposed before its body starts never starts it, and rejects with `DISPOSED`.
 
+A caller cancels a run by passing a `signal` after the body, as in `runJob({ job }, body, { signal: request.signal })` or `{ signal: AbortSignal.timeout(5_000) }`. If it aborts before the body starts, the run starts no more factories in its scope, aborts the `ctx.signal` of those still running, disposes what it created and rejects with the signal's reason. Instances above the run's scope are left alone, since other callers may share them. If it aborts while the body runs, it aborts the body's `signal` with the same reason; the run still waits for the body and settles as the body does, so a body can return partial results or throw `signal.reason`.
+
 ### Multi-bindings
 
 ```ts

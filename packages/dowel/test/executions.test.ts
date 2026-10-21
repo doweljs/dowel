@@ -383,3 +383,161 @@ describe('executions', () => {
 		).toThrow(/multi-binding 'Items'/)
 	})
 })
+
+describe('caller cancellation', () => {
+	const Task = scope('task')
+	const TaskId = slot('TaskId', { scope: Task })<string>()
+
+	/** A task scope whose services log their lifecycle; `Slow` starts only once `opened` opens. */
+	function fixture() {
+		const events: string[] = []
+		const starting = gate()
+		const opened = gate()
+		const Fast = service('Fast', { id: TaskId }, ({ id }, ctx) => {
+			ctx.defer(() => void events.push('fast disposed'))
+			return id
+		})
+		const Slow = service('Slow', { fast: Fast }, async ({ fast }, ctx) => {
+			ctx.signal.addEventListener('abort', () => void events.push('slow aborted'))
+			starting.open()
+			await opened.promise
+			ctx.defer(() => void events.push('slow disposed'))
+			return fast
+		})
+		const After = service('After', { slow: Slow }, ({ slow }) => {
+			events.push('after created')
+			return slow
+		})
+		const TaskJob = execution('TaskJob', { scope: Task, entry: After, inputs: { id: TaskId } })
+		return { events, starting, opened, TaskJob }
+	}
+
+	test('a run called with an aborted signal rejects with its reason and creates nothing', async () => {
+		const { events, TaskJob } = fixture()
+		const app = await container().provide(TaskJob).build()
+		const reason = new Error('gave up')
+		const body = (): void => void events.push('body ran')
+		await expect(
+			app.get(TaskJob)({ id: 'a' }, body, { signal: AbortSignal.abort(reason) }),
+		).rejects.toBe(reason)
+		expect(events).toEqual([])
+	})
+
+	test('aborting during initialization stops its factories, disposes what was created, and skips the body', async () => {
+		const { events, starting, opened, TaskJob } = fixture()
+		const app = await container().provide(TaskJob).build()
+		const caller = new AbortController()
+		const reason = new Error('client went away')
+		const run = app.get(TaskJob)({ id: 'a' }, () => void events.push('body ran'), {
+			signal: caller.signal,
+		})
+		await starting.promise
+		caller.abort(reason)
+		// The factory ignores its signal; the run still waits for it before disposing.
+		opened.open()
+		await expect(run).rejects.toBe(reason)
+		expect(events).toEqual(['slow aborted', 'slow disposed', 'fast disposed'])
+		await app.dispose()
+	})
+
+	test("a factory that fails because the caller aborted reports the caller's reason", async () => {
+		const starting = gate()
+		const Connection = service('Connection', { id: TaskId }, (_deps, ctx) => {
+			starting.open()
+			return new Promise((_resolve, reject) => {
+				ctx.signal.addEventListener('abort', () => reject(new Error('connect aborted')))
+			})
+		})
+		const Connect = execution('Connect', { scope: Task, entry: Connection, inputs: { id: TaskId } })
+		const app = await container().provide(Connect).build()
+		const caller = new AbortController()
+		const reason = new Error('client went away')
+		const run = app.get(Connect)({ id: 'a' }, () => {}, { signal: caller.signal })
+		await starting.promise
+		caller.abort(reason)
+		await expect(run).rejects.toBe(reason)
+	})
+
+	test('aborting while the body runs aborts its signal, and the run settles as the body does', async () => {
+		const { events, opened, TaskJob } = fixture()
+		opened.open()
+		const app = await container().provide(TaskJob).build()
+		const caller = new AbortController()
+		const reason = new Error('timed out')
+		const started = gate()
+		const run = app.get(TaskJob)(
+			{ id: 'a' },
+			(id, { signal }) =>
+				new Promise<string>((resolve) => {
+					started.open()
+					signal.addEventListener('abort', () => {
+						events.push(`body aborted: ${signal.reason === reason}`)
+						resolve(`${id} partial`)
+					})
+				}),
+			{ signal: caller.signal },
+		)
+		await started.promise
+		caller.abort(reason)
+		expect(await run).toBe('a partial')
+		expect(events).toEqual([
+			'after created',
+			'body aborted: true',
+			'slow aborted',
+			'slow disposed',
+			'fast disposed',
+		])
+	})
+
+	test('a body may reject with the reason itself', async () => {
+		const { opened, TaskJob } = fixture()
+		opened.open()
+		const app = await container().provide(TaskJob).build()
+		const caller = new AbortController()
+		const reason = new Error('stop')
+		const run = app.get(TaskJob)(
+			{ id: 'a' },
+			async (_id, { signal }) => {
+				caller.abort(reason)
+				signal.throwIfAborted()
+			},
+			{ signal: caller.signal },
+		)
+		await expect(run).rejects.toBe(reason)
+	})
+
+	test('a run stops listening to the caller once it settles', async () => {
+		const { opened, TaskJob } = fixture()
+		opened.open()
+		const app = await container().provide(TaskJob).build()
+		const { signal } = new AbortController()
+		let listeners = 0
+		const add = signal.addEventListener.bind(signal)
+		const remove = signal.removeEventListener.bind(signal)
+		signal.addEventListener = (...args: Parameters<typeof add>) => {
+			listeners++
+			add(...args)
+		}
+		signal.removeEventListener = (...args: Parameters<typeof remove>) => {
+			listeners--
+			remove(...args)
+		}
+		for (const id of ['a', 'b', 'c']) await app.get(TaskJob)({ id }, (value) => value, { signal })
+		await expect(
+			app.get(TaskJob)({ id: 'd' }, () => Promise.reject(new Error('body failed')), { signal }),
+		).rejects.toThrow('body failed')
+		expect(listeners).toBe(0)
+	})
+
+	test('options must carry an AbortSignal', async () => {
+		const { opened, TaskJob } = fixture()
+		opened.open()
+		const app = await container().provide(TaskJob).build()
+		const job = untyped(app.get(TaskJob))
+		await expect(job({ id: 'a' }, () => {}, { signal: 'nope' })).rejects.toThrow(
+			/options that are not an object with an AbortSignal 'signal'/,
+		)
+		await expect(job({ id: 'a' }, () => {}, 42)).rejects.toThrow(/AbortSignal/)
+		expect(await job({ id: 'a' }, () => 'ok', {})).toBe('ok')
+	})
+})

@@ -44,6 +44,12 @@ test('executions', () => {
 		job({ input: 1 }, (runner) => runner.run())
 		// @ts-expect-error: no such input
 		job({ input: { id: 'x' }, other: 1 }, (runner) => runner.run())
+		const { signal } = new AbortController()
+		expectTypeOf(job({ input: { id: 'x' } }, (runner) => runner.run(), { signal })).toEqualTypeOf<
+			Promise<string>
+		>()
+		// @ts-expect-error: the signal must be an AbortSignal
+		job({ input: { id: 'x' } }, (runner) => runner.run(), { signal: 'stop' })
 		return { job }
 	})
 	expectTypeOf(Scheduler.scope).toEqualTypeOf<'root'>()
@@ -75,6 +81,8 @@ test('executions', () => {
 	const Plain = execution('Plain', { scope: JobScope, entry: Logger })
 	const Uses = service('Uses', { plain: Plain }, ({ plain }) => {
 		expectTypeOf(plain((log) => log)).toEqualTypeOf<Promise<{ info(message: string): void }>>()
+		// Options follow the body.
+		plain((log) => log, { signal: AbortSignal.timeout(1000) })
 		return plain
 	})
 	void Uses
