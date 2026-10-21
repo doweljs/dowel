@@ -108,14 +108,20 @@ describe('executions across replacements', () => {
 		const Worker = service('Worker', { input: JobInput }, ({ input }) => input)
 		const RunJob = execution('RunJob', { scope: Job, entry: Worker, inputs: { input: JobInput } })
 		const held = gate()
+		const started = gate()
 		const Starter = service('Starter', { run: RunJob }, ({ run }) => ({
-			start: () => run({ input: 'stubborn' }, () => held.promise),
+			start: () =>
+				run({ input: 'stubborn' }, () => {
+					started.open()
+					return held.promise
+				}),
 		}))
 		const Other = service('Other', () => 1)
 		await update('jobs.ts', { Job, JobInput, Worker, RunJob, Starter })
 		await update('other.ts', { Other })
 		const app = await container().provide(Starter, Other).build()
 		const running = app.get(Starter).start()
+		await started.promise
 
 		let firstDone = false
 		const first = update('other.ts', { Other: service('Other', () => 2) }).then(() => {
