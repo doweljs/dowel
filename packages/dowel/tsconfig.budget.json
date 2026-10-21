@@ -1,0 +1,6 @@
+{
+	// What scripts/type-budget.ts measures: the generated scale test alone.
+	"extends": "./tsconfig.json",
+	"include": [],
+	"files": ["test/types/scale.test-d.ts"]
+}
