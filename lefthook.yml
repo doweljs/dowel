@@ -1,0 +1,16 @@
+# Git hooks, installed by lefthook's own postinstall on `bun install`.
+
+pre-commit:
+  parallel: true
+  commands:
+    biome:
+      glob: "*.{ts,js,json,md}"
+      run: bunx biome check --write --no-errors-on-unmatched {staged_files}
+      stage_fixed: true
+
+pre-push:
+  commands:
+    typecheck:
+      run: bun run typecheck && bun run typecheck:ts59
+    test:
+      run: bun run test

@@ -1,0 +1,386 @@
+:root {
+	--bg: #f7f7f5;
+	--panel: #ffffff;
+	--line: #e2e2de;
+	--text: #1c1c1a;
+	--muted: #6b6b66;
+	--accent: #3b6ef5;
+	--root: #d9e5ff;
+	--root-ink: #1f3f99;
+	--scoped: #ffe7c2;
+	--scoped-ink: #7a4b00;
+	--slot: #ececea;
+	--slot-ink: #3a3a37;
+	--ready: #2fa36b;
+	--pending: #e3a008;
+	--idle: #a8a8a3;
+	--warn: #c73e1d;
+	--edge: #a9a9a4;
+	--edge-active: #3b6ef5;
+	--binding: #2fa36b;
+}
+@media (prefers-color-scheme: dark) {
+	:root {
+		--bg: #141414;
+		--panel: #1d1d1d;
+		--line: #2d2d2d;
+		--text: #ececea;
+		--muted: #9a9a95;
+		--accent: #7aa2ff;
+		--root: #1f2d55;
+		--root-ink: #c7d6ff;
+		--scoped: #4a3410;
+		--scoped-ink: #ffd79a;
+		--slot: #2b2b2b;
+		--slot-ink: #d6d6d2;
+		--edge: #5a5a57;
+		--edge-active: #7aa2ff;
+		--binding: #3fbf7f;
+	}
+}
+* {
+	box-sizing: border-box;
+}
+body {
+	margin: 0;
+	font:
+		13px / 1.45 ui-sans-serif,
+		system-ui,
+		sans-serif;
+	background: var(--bg);
+	color: var(--text);
+	height: 100vh;
+	display: grid;
+	grid-template-rows: 44px 1fr;
+}
+header {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 0 16px;
+	border-bottom: 1px solid var(--line);
+	background: var(--panel);
+}
+header h1 {
+	font-size: 14px;
+	margin: 0 8px 0 0;
+	letter-spacing: 0.02em;
+}
+header .spacer {
+	flex: 1;
+}
+select,
+button {
+	font: inherit;
+	color: inherit;
+	background: var(--bg);
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	padding: 4px 8px;
+	cursor: pointer;
+}
+#status {
+	color: var(--muted);
+}
+main {
+	display: grid;
+	grid-template-columns: 250px 1fr 300px;
+	min-height: 0;
+}
+aside,
+#details {
+	overflow: auto;
+	background: var(--panel);
+	border-right: 1px solid var(--line);
+	padding: 12px;
+}
+#details {
+	border-right: 0;
+	border-left: 1px solid var(--line);
+}
+#canvas {
+	position: relative;
+	overflow: hidden;
+	cursor: grab;
+}
+#canvas.dragging {
+	cursor: grabbing;
+}
+#graph,
+#graph svg {
+	display: block;
+	width: 100%;
+	height: 100%;
+}
+.hud {
+	position: absolute;
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	color: var(--muted);
+	font-size: 11px;
+	pointer-events: none;
+}
+.hud.top {
+	top: 10px;
+	right: 12px;
+	background: var(--panel);
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	padding: 4px 8px;
+}
+.hud.bottom {
+	left: 12px;
+	bottom: 10px;
+}
+.hud.status {
+	right: 12px;
+	bottom: 10px;
+}
+.hud button,
+.hud label {
+	pointer-events: auto;
+	font-size: 11px;
+}
+.hud button {
+	padding: 2px 8px;
+}
+.hud label {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	cursor: pointer;
+}
+.hud input {
+	margin: 0;
+	accent-color: var(--accent);
+}
+#crumb {
+	pointer-events: auto;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+#crumb:empty {
+	display: none;
+}
+#crumb a {
+	color: var(--accent);
+	cursor: pointer;
+	text-decoration: none;
+}
+#crumb a:hover {
+	text-decoration: underline;
+}
+#crumb b {
+	color: var(--text);
+	font-weight: 600;
+}
+.key::before {
+	content: "";
+	display: inline-block;
+	width: 18px;
+	height: 0;
+	border-top: 2px solid var(--edge);
+	margin-right: 6px;
+	vertical-align: middle;
+}
+.key.optional::before {
+	border-top-style: dashed;
+}
+.key.binding::before {
+	border-top-color: var(--binding);
+}
+.module {
+	margin-bottom: 14px;
+}
+.module h3 {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--muted);
+	margin: 0 0 6px;
+	word-break: break-all;
+}
+.item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 6px;
+	border-radius: 6px;
+	cursor: pointer;
+}
+.item:hover,
+.item.active {
+	background: var(--bg);
+}
+.dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--idle);
+	flex: none;
+}
+.dot.ready {
+	background: var(--ready);
+}
+.dot.pending {
+	background: var(--pending);
+}
+.dot.none {
+	background: transparent;
+	border: 1px solid var(--line);
+}
+.chip {
+	font-size: 10px;
+	padding: 1px 6px;
+	border-radius: 999px;
+	background: var(--slot);
+	color: var(--slot-ink);
+}
+.chip.scoped {
+	background: var(--scoped);
+	color: var(--scoped-ink);
+}
+.chip.root {
+	background: var(--root);
+	color: var(--root-ink);
+}
+.node {
+	cursor: pointer;
+}
+.node rect {
+	fill: var(--panel);
+	stroke: var(--line);
+	stroke-width: 1.2;
+}
+.node.root rect {
+	fill: var(--root);
+	stroke: var(--root-ink);
+}
+.node.scoped rect {
+	fill: var(--scoped);
+	stroke: var(--scoped-ink);
+}
+.node.slot rect,
+.node.scope rect {
+	stroke-dasharray: 4 3;
+}
+.node .status {
+	fill: transparent;
+}
+.node .status.ready {
+	fill: var(--ready);
+}
+.node .status.pending {
+	fill: var(--pending);
+}
+.node .status.idle {
+	fill: var(--idle);
+}
+.node.active rect {
+	stroke: var(--accent);
+	stroke-width: 2.4;
+}
+.node.focus rect {
+	stroke: var(--accent);
+	stroke-width: 2.4;
+}
+.node.dim {
+	opacity: 0.35;
+}
+.node text {
+	fill: var(--text);
+	font-size: 12px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+	pointer-events: none;
+}
+.node .meta {
+	fill: var(--muted);
+	font-size: 10px;
+	font-family: ui-sans-serif, system-ui, sans-serif;
+}
+.node .ambient tspan {
+	pointer-events: auto;
+	cursor: pointer;
+}
+.node .ambient tspan:hover,
+.node .ambient tspan.active {
+	fill: var(--accent);
+	text-decoration: underline;
+}
+.node .ambient tspan.optional {
+	font-style: italic;
+}
+.node.hub rect {
+	stroke-width: 2;
+}
+.edge {
+	fill: none;
+	stroke: var(--edge);
+	stroke-width: 1.4;
+	marker-end: url(#arrow);
+}
+.edge.optional {
+	stroke-dasharray: 4 3;
+}
+.edge.binding {
+	stroke: var(--binding);
+	marker-end: url(#arrow-binding);
+}
+.edge.active {
+	stroke: var(--edge-active);
+	stroke-width: 2.2;
+	marker-end: url(#arrow-active);
+}
+.edge.binding.active {
+	stroke: var(--binding);
+	marker-end: url(#arrow-binding);
+}
+.edge.dim {
+	opacity: 0.2;
+}
+.edge.reversed {
+	marker-end: none;
+	marker-start: url(#arrow);
+}
+.edge.reversed.active {
+	marker-start: url(#arrow-active);
+}
+.edge.reversed.binding,
+.edge.reversed.binding.active {
+	marker-start: url(#arrow-binding);
+	marker-end: none;
+}
+#arrow path {
+	fill: var(--edge);
+}
+#arrow-active path {
+	fill: var(--edge-active);
+}
+#arrow-binding path {
+	fill: var(--binding);
+}
+dl {
+	display: grid;
+	grid-template-columns: 90px 1fr;
+	gap: 6px 10px;
+	margin: 0;
+}
+dt {
+	color: var(--muted);
+}
+dd {
+	margin: 0;
+	word-break: break-all;
+}
+.warn {
+	color: var(--warn);
+}
+#details h2 {
+	margin: 0 0 10px;
+	font-size: 15px;
+}
+.empty {
+	color: var(--muted);
+	padding: 24px;
+}

@@ -1,0 +1,35 @@
+{
+	"name": "dowel-monorepo",
+	"private": true,
+	"type": "module",
+	"packageManager": "bun@1.4.3",
+	"workspaces": [
+		"packages/*",
+		"examples/*"
+	],
+	"scripts": {
+		"test": "bun test --conditions=@doweljs/source",
+		"typecheck": "bun run --filter '*' typecheck && tsc -p scripts/tsconfig.json",
+		"build": "bun run --filter '*' build",
+		"lint": "biome check .",
+		"knip": "knip",
+		"format": "biome format --write .",
+		"check": "bun run lint && bun run typecheck && bun run typecheck:ts59 && bun run typecheck:budget && bun run test && bun run check:package && bun run knip",
+		"typecheck:ts59": "node node_modules/typescript59/bin/tsc -p packages/dowel/tsconfig.json --noEmit",
+		"typecheck:budget": "bun scripts/type-budget.ts",
+		"check:package": "bun scripts/check-package.ts",
+		"scale": "bun scripts/generate-scale.ts",
+		"changeset": "changeset",
+		"version-packages": "changeset version && bun install",
+		"release": "bun run check && bun run build && changeset publish"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.15",
+		"@changesets/cli": "^3.0.3",
+		"@types/bun": "^1.4.3",
+		"knip": "^6.42.1",
+		"lefthook": "^2.2.2",
+		"typescript": "^7.0.2",
+		"typescript59": "npm:typescript@5.9"
+	}
+}

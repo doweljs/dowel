@@ -1,0 +1,40 @@
+{
+	"name": "@doweljs/vite",
+	"version": "0.1.0",
+	"description": "Vite plugin for dowel: hot replacement of services and graph diagnostics.",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/doweljs/dowel.git",
+		"directory": "packages/vite"
+	},
+	"homepage": "https://github.com/doweljs/dowel/tree/main/packages/vite#readme",
+	"bugs": "https://github.com/doweljs/dowel/issues",
+	"type": "module",
+	"engines": {
+		"node": ">=20"
+	},
+	"sideEffects": false,
+	"exports": {
+		".": {
+			"@doweljs/source": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist",
+		"src"
+	],
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json --noEmit",
+		"build": "rm -rf dist && tsc -p tsconfig.build.json"
+	},
+	"peerDependencies": {
+		"@doweljs/core": "^0.1.0",
+		"vite": "^8.3.4"
+	},
+	"dependencies": {
+		"magic-string": "^1.4.3"
+	}
+}

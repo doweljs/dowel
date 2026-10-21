@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>dowel</title>
+		<script type="module" src="./main.ts"></script>
+	</head>
+	<body>
+		<header>
+			<h1>dowel</h1>
+			<select id="environment" title="Environment"></select>
+			<select id="container" title="Container"></select>
+			<span class="spacer"></span>
+			<span id="warnings" class="warn"></span>
+		</header>
+		<main>
+			<aside id="list"></aside>
+			<div id="canvas">
+				<div id="graph"><div class="empty">Waiting for the first module to load…</div></div>
+				<div class="hud top">
+					<span id="crumb"></span>
+					<label
+						title="Show dependencies with many dependents as a line on each dependent instead of as edges"
+						><input type="checkbox" id="bundle" checked /> bundle shared</label
+					>
+					<button type="button" id="fit" title="Fit graph to view">fit</button>
+				</div>
+				<div class="hud bottom">
+					<span class="key">depends on</span><span class="key optional">optional</span
+					><span class="key binding">bound to</span>
+				</div>
+				<div class="hud status"><span id="status"></span></div>
+			</div>
+			<div id="details"><div class="empty">Select a node.</div></div>
+		</main>
+	</body>
+</html>

@@ -1,0 +1,20 @@
+{
+	"$schema": "https://unpkg.com/knip@6/schema.json",
+	"ignoreExportsUsedInFile": true,
+	"workspaces": {
+		".": {
+			"entry": ["scripts/*.ts"],
+			"ignore": ["scripts/package-fixture/**"]
+		},
+		"packages/dowel": {
+			"entry": ["test/types/*.test-d.ts"]
+		},
+		"packages/vite": {
+			"entry": ["test/fixtures/app/main.ts"]
+		},
+		"packages/devtools": {
+			"entry": ["ui/main.ts", "test/fixtures/app/main.ts"]
+		},
+		"examples/shop": {}
+	}
+}

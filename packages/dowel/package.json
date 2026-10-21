@@ -1,0 +1,41 @@
+{
+	"name": "@doweljs/core",
+	"version": "0.1.0",
+	"description": "Type-complete dependency injection for TypeScript.",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/doweljs/dowel.git",
+		"directory": "packages/dowel"
+	},
+	"homepage": "https://github.com/doweljs/dowel/tree/main/packages/dowel#readme",
+	"bugs": "https://github.com/doweljs/dowel/issues",
+	"type": "module",
+	"engines": {
+		"node": ">=20"
+	},
+	"sideEffects": [
+		"./dist/hot.js",
+		"./src/hot.ts"
+	],
+	"exports": {
+		".": {
+			"@doweljs/source": "./src/index.ts",
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./hot": {
+			"@doweljs/source": "./src/hot.ts",
+			"types": "./dist/hot.d.ts",
+			"default": "./dist/hot.js"
+		}
+	},
+	"files": [
+		"dist",
+		"src"
+	],
+	"scripts": {
+		"typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.build.json --noEmit",
+		"build": "rm -rf dist && tsc -p tsconfig.build.json"
+	}
+}

@@ -1,0 +1,10 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"rootDir": ".",
+		"noEmit": true,
+		// Workspace packages are checked against each other's sources, not their last build.
+		"customConditions": ["@doweljs/source"]
+	},
+	"include": ["src", "test"]
+}

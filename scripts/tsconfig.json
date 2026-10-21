@@ -1,0 +1,7 @@
+{
+	"extends": "../tsconfig.base.json",
+	"compilerOptions": { "noEmit": true },
+	"include": ["."],
+	// Compiled by check-package.ts against the packed package instead.
+	"exclude": ["package-fixture"]
+}

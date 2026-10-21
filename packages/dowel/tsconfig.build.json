@@ -1,0 +1,11 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"rootDir": "src",
+		"outDir": "dist",
+		// Bun's types declare AbortSignal and AbortController (ctx.signal); no ES lib does.
+		"types": ["bun"],
+		"lib": ["ESNext"]
+	},
+	"include": ["src"]
+}

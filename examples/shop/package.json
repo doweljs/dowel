@@ -1,0 +1,13 @@
+{
+	"name": "@doweljs/example-shop",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"typecheck": "tsc -p tsconfig.json --noEmit",
+		"test": "bun test"
+	},
+	"devDependencies": {
+		"vite": "^8.3.4"
+	}
+}
