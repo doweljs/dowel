@@ -38,7 +38,7 @@ export async function replaceGeneration(access: HotAccess): Promise<Committed> {
 	// Instances created on demand are carried too, so a run does not create them again.
 	for (const plan of rootPlan.cached) nextByKey.set(planKey(plan), plan)
 	const oldRoot = access.root
-	const root = newStore(ROOT, rootPlan.cells, oldRoot.owned)
+	const root = newStore(ROOT, rootPlan.cells, oldRoot.owned, null)
 	// Carried records are shared by both stores until the commit re-points them at their new plan.
 	const carried = new Map<InstanceRecord, CachedPlan>()
 	const carriedPlans = new Set<Plan>()

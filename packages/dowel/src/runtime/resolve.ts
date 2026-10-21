@@ -5,7 +5,7 @@
  * instances, whose dependencies may be other executions.
  */
 
-import type { ServiceContext } from '../api.ts'
+import type { RunContext, ServiceContext } from '../api.ts'
 import {
 	type CachedPlan,
 	type ExecutionPlan,
@@ -16,13 +16,13 @@ import {
 } from '../compile/plan.ts'
 import { DowelError, errorsOf, failuresOf, withCleanup, withCleanupFailures } from '../errors.ts'
 import type { BindingNode } from '../nodes/node.ts'
+import { cancelStore, onCancel } from './cancel.ts'
 import { contextFor } from './context.ts'
 import {
 	cancellation,
-	cancelStarting,
-	cancelStore,
 	disposeRecords,
 	disposeStore,
+	disposing,
 	isCancellation,
 	markDisposed,
 } from './dispose.ts'
@@ -75,7 +75,7 @@ export async function initialize(order: readonly CachedPlan[], chain: Chain): Pr
 	const failures: unknown[] = []
 	const fail = (error: unknown): void => {
 		failures.push(error)
-		if (failures.length === 1) cancelStarting(store)
+		if (failures.length === 1) cancelStore(store, afterFailure(store))
 	}
 	for (const plan of order) {
 		try {
@@ -94,6 +94,23 @@ export async function initialize(order: readonly CachedPlan[], chain: Chain): Pr
 	if (failures.length > 0) throw initializationError(failures)
 }
 
+const afterFailures = new WeakSet<object>()
+
+/** Why a store stops starting factories when one of them failed: a cancellation, but its own. */
+function afterFailure(store: Store): DowelError {
+	const reason = cancellation(
+		`Scope '${store.scope.name}' stopped starting services after one failed.`,
+	)
+	afterFailures.add(reason)
+	return reason
+}
+
+/** Whether a store was cancelled from outside, rather than by a failure of its own initialization. */
+function cancelledFromOutside(store: Store): boolean {
+	const { cancelled, reason } = store
+	return cancelled && !(typeof reason === 'object' && reason !== null && afterFailures.has(reason))
+}
+
 /**
  * What `waiter`'s store waits for while `plan` is created. A store above
  * shares what it creates, so a waiter that stops starting services stops
@@ -106,11 +123,9 @@ function joined<T>(promise: Promise<T>, plan: CachedPlan, waiter: Store): Promis
 		cancellation(
 			`Scope '${waiter.scope.name}' stopped starting services, so it no longer waits for '${plan.name}' in scope '${plan.scope.name}'.`,
 		)
-	if (waiter.cancelled) return Promise.reject(reason())
 	return new Promise<T>((resolve, reject) => {
-		const stop = (): void => reject(reason())
-		waiter.onStop.add(stop)
-		promise.then(resolve, reject).finally(() => waiter.onStop.delete(stop))
+		const stop = onCancel(waiter, () => reject(reason()))
+		promise.then(resolve, reject).finally(stop)
 	})
 }
 
@@ -141,8 +156,8 @@ export interface OpenedStore extends Child {
 
 /** How the owner of an opened store takes part in opening and disposing it. */
 export interface OpenOptions {
-	/** Runs when disposal of the store or an owner starts. */
-	readonly onCancel?: () => void
+	/** Cancels the store, and what is opened beneath it, while it is open. */
+	readonly signal?: AbortSignal | undefined
 	/** Runs before the store's instances are disposed. */
 	readonly beforeDisposal?: () => Promise<void>
 }
@@ -150,14 +165,16 @@ export interface OpenOptions {
 /**
  * Opens a store at `scopePlan` under the last store of `chain`: supplies the
  * bindings, registers it with its parent and initializes what `needs` lists.
- * On failure the store is disposed before the promise rejects.
+ * Its cancellation follows its parent's, so it is born cancelled under a
+ * cancelled one. On failure the store is disposed before the promise rejects;
+ * cancelled while it opens, it rejects with why.
  */
 export async function openStore(
 	chain: Chain,
 	scopePlan: ScopePlan,
 	bindings: readonly BindingNode[],
 	needs: ScopeNeeds,
-	{ onCancel, beforeDisposal }: OpenOptions = {},
+	{ signal, beforeDisposal }: OpenOptions = {},
 ): Promise<OpenedStore> {
 	// A store being disposed may already have disposed its children, so nothing may open under it.
 	if (chain.some((store) => store.disposed)) {
@@ -166,27 +183,25 @@ export async function openStore(
 			`Scope '${scopePlan.scope.name}' cannot be opened because the container it would open from has been disposed.`,
 		)
 	}
+	signal?.throwIfAborted()
 	const parent = chain[chain.length - 1]!
-	const store = newStore(scopePlan.scope, scopePlan.cells, parent.owned)
+	const store = newStore(scopePlan.scope, scopePlan.cells, parent.owned, parent)
 	supply(scopePlan, store, bindings, needs.required)
+	const stop = (): void => cancelStore(store, signal!.reason)
+	signal?.addEventListener('abort', stop)
 	let disposal: Promise<void> | null = null
-	let cancelled = false
 	const opened: OpenedStore = {
 		chain: [...chain, store],
-		cancel: () => {
-			// Once is enough: what opens beneath it later is cancelled when disposal reaches it.
-			if (cancelled) return
-			cancelled = true
-			onCancel?.()
-			cancelStore(store)
-		},
+		store,
 		dispose: () => {
 			disposal ??= (async () => {
 				try {
-					opened.cancel()
+					// What runs beneath it hears of the disposal before anything is waited for.
+					cancelStore(store, disposing(scopePlan.scope))
 					await beforeDisposal?.()
 					await disposeStore(store, 'the opened container')
 				} finally {
+					signal?.removeEventListener('abort', stop)
 					// Detaching only once disposed lets a parent disposed meanwhile wait for it.
 					parent.children.delete(opened)
 				}
@@ -198,13 +213,18 @@ export async function openStore(
 	await withCleanup(
 		async () => {
 			try {
+				if (store.cancelled) throw store.reason
 				await initialize(needs.order, opened.chain)
 			} catch (error) {
-				if (!cancelled) throw error
-				// Disposal stopped it: it reports that, with what failed for another reason than the abort.
+				if (!cancelledFromOutside(store)) throw error
+				// Cancelled: it reports why, with what failed for another reason than the abort.
 				throw withCleanupFailures(
-					cancellation(`Scope '${scopePlan.scope.name}' was disposed while it opened.`),
-					errorsOf(error).filter((failure) => !isCancellation(failure) && !isAbort(failure)),
+					isCancellation(store.reason)
+						? cancellation(`Scope '${scopePlan.scope.name}' was disposed while it opened.`)
+						: store.reason,
+					errorsOf(error).filter(
+						(failure) => failure !== store.reason && !isCancellation(failure) && !isAbort(failure),
+					),
 					`Opening scope '${scopePlan.scope.name}'`,
 				)
 			}
@@ -388,36 +408,48 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 		)
 	}
 	const bindings = inputBindings(plan, values)
-	const controller = new AbortController()
-	// The parent owns the run, not just its container: disposing the parent aborts the run's
-	// signal and waits for the body before the run's container, and then the parent, are disposed.
-	// The body counts as running from just before it is called, so one that starts disposing its
-	// owner synchronously is still waited for. Once it settled, disposing the run's container is
-	// the run finishing, not a cancellation.
+	// The parent owns the run, not just its container: disposing the parent cancels the run and
+	// waits for the body before the run's container, and then the parent, are disposed. The body
+	// counts as running from just before it is called, so one that starts disposing its owner
+	// synchronously is still waited for.
 	let phase: 'opening' | Promise<void> | 'settled' = 'opening'
-	const notStarted = (): DowelError =>
-		cancellation(`Execution '${name}' was disposed before its body started.`)
+	// Why the body never started: a disposal, reported as such, or the reason it was cancelled with.
+	const notStarted = (reason: unknown): unknown =>
+		isCancellation(reason)
+			? cancellation(`Execution '${name}' was disposed before its body started.`)
+			: reason
 	const opened = await openStore(base, plan.child, bindings, plan.needs, {
-		onCancel: () => {
-			if (phase !== 'settled')
-				controller.abort(cancellation(`Execution '${name}' is being disposed.`))
-		},
 		beforeDisposal: async () => {
 			if (typeof phase === 'object') await phase
 		},
 	}).catch((error: unknown) => {
-		// Disposal stopped the opening: the run reports that, with what else failed.
+		// Cancellation stopped the opening: the run reports that, with what else failed.
 		const [first, ...others] = errorsOf(error)
 		if (!isCancellation(first)) throw error
-		throw withCleanupFailures(notStarted(), others, `Execution '${name}'`)
+		throw withCleanupFailures(notStarted(first), others, `Execution '${name}'`)
 	})
-	// Disposal of the run or an owner started before the body could: the body never starts.
-	if (controller.signal.aborted) {
+	const { store } = opened
+	// Cancelled before the body could start: the body never starts.
+	if (store.cancelled) {
 		throw withCleanupFailures(
-			notStarted(),
+			notStarted(store.reason),
 			await failuresOf(() => opened.dispose()),
 			`Execution '${name}'`,
 		)
+	}
+	// The body's signal follows the run's cancellation until the body settles, after which
+	// disposing the run's container is the run finishing. It is created only if read.
+	let controller: AbortController | null = null
+	let unfollow = noop
+	const context: RunContext = {
+		get signal() {
+			if (controller === null) {
+				const created = new AbortController()
+				controller = created
+				if (phase !== 'settled') unfollow = onCancel(store, (reason) => created.abort(reason))
+			}
+			return controller.signal
+		},
 	}
 	const value = await withCleanup(
 		async () => {
@@ -426,8 +458,9 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 				settle = resolve
 			})
 			try {
-				return await body(resolve(plan.entry, opened.chain), { signal: controller.signal })
+				return await body(resolve(plan.entry, opened.chain), context)
 			} finally {
+				unfollow()
 				settle()
 				phase = 'settled'
 			}

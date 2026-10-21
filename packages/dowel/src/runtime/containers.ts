@@ -128,7 +128,7 @@ export class RootContainer extends ContainerBase implements Container {
 
 	static async create(composition: Composition, compiled: Compiled): Promise<Container> {
 		const rootPlan = compiled.scopes.get(ROOT.name)!
-		const root = newStore(ROOT, rootPlan.cells, new WeakSet())
+		const root = newStore(ROOT, rootPlan.cells, new WeakSet(), null)
 		const container = new RootContainer(composition, compiled, root)
 		const init = withCleanup(
 			() => initialize(rootPlan.needs.order, [root]),

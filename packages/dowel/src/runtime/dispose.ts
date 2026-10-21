@@ -1,6 +1,8 @@
 /** Disposal of instances and stores, shared by the runtime and hot replacement. */
 
 import { DowelError, errorsOf } from '../errors.ts'
+import type { ScopeNode } from '../nodes/node.ts'
+import { cancelStore } from './cancel.ts'
 import { clearStore, type InstanceRecord, type Store } from './store.ts'
 
 /**
@@ -49,8 +51,8 @@ export async function disposeRecords(
  */
 export async function disposeStore(store: Store, what: string): Promise<void> {
 	store.disposed = true
-	// Tell factories and runs still going to give up; disposal waits for them below.
-	cancelStore(store)
+	// Tell factories and runs still going beneath it to give up; disposal waits for them below.
+	cancelStore(store, disposing(store.scope))
 	const failures: unknown[] = []
 	try {
 		await disposeChildren(store)
@@ -76,28 +78,13 @@ export function markDisposed(record: InstanceRecord): void {
 	abortSignal(record)
 }
 
-/**
- * Stops a store from starting factories, and aborts the signals of those
- * still running. A signal not yet read is created aborted, so a factory that
- * reads `ctx.signal` later sees it aborted. What it waits for in stores above
- * keeps running for whoever else shares it; the store just stops waiting.
- */
-export function cancelStarting(store: Store): void {
-	store.cancelled = true
-	for (const stop of store.onStop) stop()
-	store.onStop.clear()
-	for (const record of store.starting) {
-		record.controller ??= new AbortController()
-		abortSignal(record)
-	}
-}
-
-/** The signal behind `ctx.signal`, created on first use, and aborted already if disposal has started. */
+/** The signal behind `ctx.signal`, created on first use, and aborted already if disposal or cancellation has started. */
 export function signalOf(record: InstanceRecord, store: Store): AbortSignal {
 	if (record.controller === null) {
 		record.controller = new AbortController()
-		// Created late: the disposal it reports may have started already.
-		if (record.disposed || (store.disposed && store.starting.has(record))) abortSignal(record)
+		// Created late: what it reports may have happened already.
+		if (record.disposed) abortSignal(record)
+		else if (store.cancelled && store.starting.has(record)) record.controller.abort(store.reason)
 	}
 	return record.controller.signal
 }
@@ -119,18 +106,24 @@ export function cancellation(message: string): DowelError {
 	return error
 }
 
-export function isCancellation(error: unknown): boolean {
-	return typeof error === 'object' && error !== null && cancellations.has(error)
-}
+const disposals = new WeakMap<ScopeNode, DowelError>()
 
 /**
- * Aborts every run and starting factory at and beneath a store, without
- * waiting for anything, so the order does not matter. One opened while it
- * cancels is reached too.
+ * Why what runs in a scope is cancelled when a store of it is disposed. Made
+ * once per scope, since every run of a scope is disposed when it finishes,
+ * and a new error each time would cost more than the run.
  */
-export function cancelStore(store: Store): void {
-	cancelStarting(store)
-	for (const child of store.children) child.cancel()
+export function disposing(scope: ScopeNode): DowelError {
+	let reason = disposals.get(scope)
+	if (reason === undefined) {
+		reason = cancellation(`Scope '${scope.name}' is being disposed.`)
+		disposals.set(scope, reason)
+	}
+	return reason
+}
+
+export function isCancellation(error: unknown): boolean {
+	return typeof error === 'object' && error !== null && cancellations.has(error)
 }
 
 /** Disposes what a store owns, newest first, one after another, collecting failures. */
