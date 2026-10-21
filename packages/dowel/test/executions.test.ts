@@ -177,6 +177,71 @@ describe('executions', () => {
 		}
 	})
 
+	/** A body that settles only once its signal aborts. */
+	const untilAborted =
+		(events: string[], id: string) =>
+		(_runner: unknown, { signal }: { signal: AbortSignal }) =>
+			new Promise<void>((resolve) => {
+				signal.addEventListener('abort', () => {
+					events.push(`${id} aborted`)
+					resolve()
+				})
+			})
+
+	test('disposal aborts every run before waiting for any, so a run may wait on an older one', async () => {
+		const events: string[] = []
+		const app = await container().provide(Job).build()
+		const job = app.get(Job)
+		const producer = job({ input: { id: 'producer' } }, untilAborted(events, 'producer'))
+		// The newer run is waited for first, and finishes only once the older one stops.
+		const consumer = job({ input: { id: 'consumer' } }, async () => {
+			await producer
+			events.push('consumer drained')
+		})
+		await nextTask()
+		await app.dispose()
+		await consumer
+		expect(events).toEqual(['producer aborted', 'consumer drained'])
+	})
+
+	test('disposal aborts runs in every opened container before waiting for any', async () => {
+		const events: string[] = []
+		const Task = scope('task', PerRequest)
+		const RequestJob = execution('RequestJob', { scope: Task, entry: Clock })
+		const app = await container().provide(RequestJob).build()
+		const first = await app.open(PerRequest, bind(Request, { url: '/first' }))
+		const second = await app.open(PerRequest, bind(Request, { url: '/second' }))
+		const producer = first.get(RequestJob)(untilAborted(events, 'producer'))
+		// The newer container is disposed first, and its run waits on a run in the older one.
+		const consumer = second.get(RequestJob)(async () => {
+			await producer
+			events.push('consumer drained')
+		})
+		await nextTask()
+		await app.dispose()
+		await consumer
+		expect(events).toEqual(['producer aborted', 'consumer drained'])
+	})
+
+	test('disposal aborts runs nested in a run before waiting for its body', async () => {
+		const events: string[] = []
+		const SubTask = scope('subtask', JobScope)
+		// Lives in the job scope, so its runs belong to the outer run.
+		const InnerJob = execution('InnerJob', { scope: SubTask, entry: Clock })
+		const Nested = service('Nested', { inner: InnerJob }, ({ inner }) => inner)
+		const OuterJob = execution('OuterJob', { scope: JobScope, entry: Nested })
+		const app = await container().provide(OuterJob).build()
+		// The outer body ignores its own signal and waits for the inner run.
+		const outer = app.get(OuterJob)(async (inner) => {
+			await inner(untilAborted(events, 'inner'))
+			events.push('outer done')
+		})
+		await nextTask()
+		await app.dispose()
+		await outer
+		expect(events).toEqual(['inner aborted', 'outer done'])
+	})
+
 	test('declared inputs must cover what the entry needs', async () => {
 		const Other = slot('Other', { scope: JobScope })<number>()
 		const Needy = service('Needy', { input: JobInput, other: Other }, (d) => d)

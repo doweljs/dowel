@@ -18,6 +18,7 @@ import { DowelError, errorsOf, failuresOf, withCleanup, withCleanupFailures } fr
 import type { BindingNode } from '../nodes/node.ts'
 import { contextFor } from './context.ts'
 import {
+	cancelChildren,
 	cancellation,
 	cancelStarting,
 	disposeRecords,
@@ -120,14 +121,16 @@ export interface OpenedStore extends Child {
 /**
  * Opens a store at `scopePlan` under the last store of `chain`: supplies the
  * bindings, registers it with its parent and initializes what `needs` lists.
- * `beforeDisposal` runs before its instances are disposed. On failure the
- * store is disposed before the promise rejects.
+ * `onCancel` runs when disposal of it or an owner starts, and `beforeDisposal`
+ * before its instances are disposed. On failure the store is disposed before
+ * the promise rejects.
  */
 export async function openStore(
 	chain: Chain,
 	scopePlan: ScopePlan,
 	bindings: readonly BindingNode[],
 	needs: ScopeNeeds,
+	onCancel?: () => void,
 	beforeDisposal?: () => Promise<void>,
 ): Promise<OpenedStore> {
 	// A store being disposed may already have disposed its children, so nothing may open under it.
@@ -143,9 +146,14 @@ export async function openStore(
 	let disposal: Promise<void> | null = null
 	const opened: OpenedStore = {
 		chain: [...chain, store],
+		cancel: () => {
+			onCancel?.()
+			cancelChildren(store)
+		},
 		dispose: () => {
 			disposal ??= (async () => {
 				try {
+					opened.cancel()
 					await beforeDisposal?.()
 					await disposeStore(store, 'the opened container')
 				} finally {
@@ -336,14 +344,18 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 	let running: Promise<void> | null = null
 	// Set when disposal reaches the run before its body started; the body then never starts.
 	let skipped = false
-	const opened = await openStore(base, plan.child, bindings, plan.needs, async () => {
-		if (running === null) {
-			skipped = true
-			return
-		}
-		controller.abort(cancellation(`Execution '${name}' is being disposed.`))
-		await running
-	})
+	const opened = await openStore(
+		base,
+		plan.child,
+		bindings,
+		plan.needs,
+		// A body that starts after this sees its signal aborted already.
+		() => controller.abort(cancellation(`Execution '${name}' is being disposed.`)),
+		async () => {
+			if (running === null) skipped = true
+			else await running
+		},
+	)
 	if (skipped) {
 		await opened.dispose()
 		throw cancellation(`Execution '${name}' was disposed before its body started.`)
