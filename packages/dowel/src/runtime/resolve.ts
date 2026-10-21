@@ -334,11 +334,20 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 	// The parent owns the run, not just its container: disposing the parent aborts the run's
 	// signal and waits for the body before the run's container, and then the parent, are disposed.
 	let running: Promise<void> | null = null
+	// Set when disposal reaches the run before its body started; the body then never starts.
+	let skipped = false
 	const opened = await openStore(base, plan.child, bindings, plan.needs, async () => {
-		if (running === null) return
+		if (running === null) {
+			skipped = true
+			return
+		}
 		controller.abort(cancellation(`Execution '${name}' is being disposed.`))
 		await running
 	})
+	if (skipped) {
+		await opened.dispose()
+		throw cancellation(`Execution '${name}' was disposed before its body started.`)
+	}
 	const value = await withCleanup(
 		async () => {
 			const result = Promise.resolve(

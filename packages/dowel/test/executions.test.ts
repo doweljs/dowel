@@ -1,5 +1,14 @@
 import { describe, expect, test } from 'bun:test'
-import { bind, container, execution, optional, scope, service, slot } from '../src/index.ts'
+import {
+	bind,
+	container,
+	DowelError,
+	execution,
+	optional,
+	scope,
+	service,
+	slot,
+} from '../src/index.ts'
 import { gate, Logger, memoryLogger, nextTask, PerRequest, Request, untyped } from './support.ts'
 
 describe('executions', () => {
@@ -139,6 +148,33 @@ describe('executions', () => {
 		release.open()
 		await Promise.all([running, disposing])
 		expect(events).toEqual(['run scope cleaned up', 'parent disposed'])
+	})
+
+	test('a run disposed before its body starts never starts it', async () => {
+		const events: string[] = []
+		const Disposed = service('Disposed', { input: JobInput }, ({ input }, ctx) => {
+			ctx.defer(() => void events.push('entry disposed'))
+			return input.id
+		})
+		const Short = execution('Short', {
+			scope: JobScope,
+			entry: Disposed,
+			inputs: { input: JobInput },
+		})
+		// Disposal starts at every point from the call until well after the body would have started.
+		for (let ticks = 0; ticks < 10; ticks++) {
+			events.length = 0
+			const app = await container().provide(Short).build()
+			const running = app.get(Short)({ input: { id: 'x' } }, () => void events.push('body ran'))
+			for (let i = 0; i < ticks; i++) await Promise.resolve()
+			await app.dispose()
+			const outcome = await running.then(
+				() => 'ran',
+				(error: unknown) => (error instanceof DowelError ? error.code : error),
+			)
+			if (outcome === 'DISPOSED') expect(events).not.toContain('body ran')
+			else expect(events).toEqual(['body ran', 'entry disposed'])
+		}
 	})
 
 	test('declared inputs must cover what the entry needs', async () => {
