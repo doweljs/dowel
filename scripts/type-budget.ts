@@ -1,8 +1,10 @@
 /**
- * Holds the type-level model to a compile-time budget. Checks the core
- * package under TypeScript 5.9, the supported floor, and fails when it needs
- * more type instantiations than `type-budget.json` allows, so a new check
- * has to pay for itself.
+ * Holds the type-level model to a compile-time budget. Checks a fixed
+ * workload, the generated scale test, under TypeScript 5.9, the supported
+ * floor, and fails when it needs more type instantiations than
+ * `type-budget.json` allows, so a new check has to pay for itself. Other
+ * tests are left out: they grow with every feature, which would charge the
+ * model for its own test coverage.
  *
  * `bun scripts/type-budget.ts --update` records the current count as the
  * new baseline, for a change whose cost is deliberate.
@@ -26,7 +28,7 @@ const result = Bun.spawnSync(
 		'node',
 		join(root, 'node_modules/typescript59/bin/tsc'),
 		'-p',
-		join(root, 'packages/dowel/tsconfig.json'),
+		join(root, 'packages/dowel/tsconfig.budget.json'),
 		'--noEmit',
 		'--extendedDiagnostics',
 	],
