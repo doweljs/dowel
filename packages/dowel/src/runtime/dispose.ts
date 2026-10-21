@@ -1,7 +1,7 @@
 /** Disposal of instances and stores, shared by the runtime and hot replacement. */
 
 import { DowelError, errorsOf } from '../errors.ts'
-import { type Child, clearStore, type InstanceRecord, type Store } from './store.ts'
+import { clearStore, type InstanceRecord, type Store } from './store.ts'
 
 /**
  * Runs the records' disposers last-in-first-out, collecting failures. Each
@@ -49,9 +49,8 @@ export async function disposeRecords(
  */
 export async function disposeStore(store: Store, what: string): Promise<void> {
 	store.disposed = true
-	// Tell factories still running to give up; disposal waits for them below.
-	cancelStarting(store)
-	cancelChildren(store)
+	// Tell factories and runs still going to give up; disposal waits for them below.
+	cancelStore(store)
 	const failures: unknown[] = []
 	try {
 		await disposeChildren(store)
@@ -121,20 +120,20 @@ export function isCancellation(error: unknown): boolean {
 	return typeof error === 'object' && error !== null && cancellations.has(error)
 }
 
-/** Aborts every run and starting factory beneath a store, newest first, as disposal will reach them. */
-export function cancelChildren(store: Store): void {
-	for (const child of newestFirst(store)) child.cancel()
-}
-
-/** What a store owns, newest first: the order disposal reaches it in. */
-function newestFirst(store: Store): Child[] {
-	return [...store.children].reverse()
+/**
+ * Aborts every run and starting factory at and beneath a store, without
+ * waiting for anything, so the order does not matter. One opened while it
+ * cancels is reached too.
+ */
+export function cancelStore(store: Store): void {
+	cancelStarting(store)
+	for (const child of store.children) child.cancel()
 }
 
 /** Disposes what a store owns, newest first, one after another, collecting failures. */
 async function disposeChildren(store: Store): Promise<void> {
 	const failures: unknown[] = []
-	for (const child of newestFirst(store)) {
+	for (const child of [...store.children].reverse()) {
 		try {
 			await child.dispose()
 		} catch (error) {
