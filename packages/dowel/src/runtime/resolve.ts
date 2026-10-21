@@ -144,10 +144,15 @@ export async function openStore(
 	const store = newStore(scopePlan.scope, scopePlan.cells, parent.owned)
 	supply(scopePlan, store, bindings, needs.required)
 	let disposal: Promise<void> | null = null
+	let cancelled = false
 	const opened: OpenedStore = {
 		chain: [...chain, store],
 		cancel: () => {
+			// Once is enough: what opens beneath it later is cancelled when disposal reaches it.
+			if (cancelled) return
+			cancelled = true
 			onCancel?.()
+			cancelStarting(store)
 			cancelChildren(store)
 		},
 		dispose: () => {
@@ -342,34 +347,36 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 	// The parent owns the run, not just its container: disposing the parent aborts the run's
 	// signal and waits for the body before the run's container, and then the parent, are disposed.
 	let running: Promise<void> | null = null
-	// Set when disposal reaches the run before its body started; the body then never starts.
-	let skipped = false
+	// Once the body settled, disposing the run's container is the run finishing, not a cancellation.
+	let settled = false
 	const opened = await openStore(
 		base,
 		plan.child,
 		bindings,
 		plan.needs,
-		// A body that starts after this sees its signal aborted already.
-		() => controller.abort(cancellation(`Execution '${name}' is being disposed.`)),
+		() => {
+			if (!settled) controller.abort(cancellation(`Execution '${name}' is being disposed.`))
+		},
 		async () => {
-			if (running === null) skipped = true
-			else await running
+			if (running !== null) await running
 		},
 	)
-	if (skipped) {
+	// Disposal of the run or an owner started before the body could: the body never starts.
+	if (controller.signal.aborted) {
 		await opened.dispose()
 		throw cancellation(`Execution '${name}' was disposed before its body started.`)
 	}
 	const value = await withCleanup(
 		async () => {
-			const result = Promise.resolve(
-				body(resolve(plan.entry, opened.chain), { signal: controller.signal }),
-			)
-			running = result.then(noop, noop)
 			try {
+				const result = Promise.resolve(
+					body(resolve(plan.entry, opened.chain), { signal: controller.signal }),
+				)
+				running = result.then(noop, noop)
 				return await result
 			} finally {
 				running = null
+				settled = true
 			}
 		},
 		() => opened.dispose(),

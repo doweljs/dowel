@@ -1,7 +1,7 @@
 /** Disposal of instances and stores, shared by the runtime and hot replacement. */
 
 import { DowelError, errorsOf } from '../errors.ts'
-import { clearStore, type InstanceRecord, type Store } from './store.ts'
+import { type Child, clearStore, type InstanceRecord, type Store } from './store.ts'
 
 /**
  * Runs the records' disposers last-in-first-out, collecting failures. Each
@@ -42,10 +42,10 @@ export async function disposeRecords(
  * one after another), then the initializations still in flight, then its
  * own instances. The store is marked disposed before anything runs, so
  * nothing new can be resolved from it meanwhile and instances that finish
- * initializing dispose themselves (and are waited for). Every run beneath it
- * is aborted before any is waited for, so runs that wait on each other all
- * hear of the disposal. It is cleared whatever happens; every failure is
- * collected and thrown together.
+ * initializing dispose themselves (and are waited for). Every run and
+ * starting factory beneath it is aborted before any is waited for, so work
+ * that waits on other work all hears of the disposal. It is cleared whatever
+ * happens; every failure is collected and thrown together.
  */
 export async function disposeStore(store: Store, what: string): Promise<void> {
 	store.disposed = true
@@ -121,15 +121,20 @@ export function isCancellation(error: unknown): boolean {
 	return typeof error === 'object' && error !== null && cancellations.has(error)
 }
 
-/** Aborts the signals of every run beneath a store, newest first, as disposal will reach them. */
+/** Aborts every run and starting factory beneath a store, newest first, as disposal will reach them. */
 export function cancelChildren(store: Store): void {
-	for (const child of [...store.children].reverse()) child.cancel()
+	for (const child of newestFirst(store)) child.cancel()
+}
+
+/** What a store owns, newest first: the order disposal reaches it in. */
+function newestFirst(store: Store): Child[] {
+	return [...store.children].reverse()
 }
 
 /** Disposes what a store owns, newest first, one after another, collecting failures. */
 async function disposeChildren(store: Store): Promise<void> {
 	const failures: unknown[] = []
-	for (const child of [...store.children].reverse()) {
+	for (const child of newestFirst(store)) {
 		try {
 			await child.dispose()
 		} catch (error) {

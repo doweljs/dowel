@@ -242,6 +242,86 @@ describe('executions', () => {
 		expect(events).toEqual(['inner aborted', 'outer done'])
 	})
 
+	test("a run that finishes on its own leaves its body's signal alone", async () => {
+		const app = await container().provide(Job).build()
+		const signals: AbortSignal[] = []
+		await app.get(Job)(
+			{ input: { id: 'done' } },
+			(_runner, { signal }) => void signals.push(signal),
+		)
+		await expect(
+			app.get(Job)({ input: { id: 'failed' } }, (_runner, { signal }) => {
+				signals.push(signal)
+				throw new Error('body failed')
+			}),
+		).rejects.toThrow('body failed')
+		expect(signals.map((signal) => signal.aborted)).toEqual([false, false])
+	})
+
+	/** A job whose entry keeps starting until `opened` settles, or, if `honour`, its signal aborts. */
+	function startingJob(events: string[], opened: Promise<void>, honour: boolean) {
+		const starting = gate()
+		const Starting = service('Starting', { input: JobInput }, async ({ input }, ctx) => {
+			starting.open()
+			const aborted = new Promise<void>((resolve) => {
+				ctx.signal.addEventListener('abort', () => {
+					events.push(`${input.id} factory aborted`)
+					resolve()
+				})
+			})
+			await (honour ? Promise.race([opened, aborted]) : opened)
+			return input.id
+		})
+		const StartingJob = execution('StartingJob', {
+			scope: JobScope,
+			entry: Starting,
+			inputs: { input: JobInput },
+		})
+		return { starting: starting.promise, StartingJob }
+	}
+
+	test('disposal aborts factories still starting in runs before waiting for any run', async () => {
+		const events: string[] = []
+		const { starting, StartingJob } = startingJob(events, new Promise<void>(() => {}), true)
+		const app = await container().provide(StartingJob, Job).build()
+		const older = app.get(StartingJob)({ input: { id: 'older' } }, () => {
+			events.push('older body ran')
+		})
+		await starting
+		// The newer run is waited for first, and finishes only once the older one settles.
+		const newer = app.get(Job)({ input: { id: 'newer' } }, () => older.catch(() => {}))
+		await nextTask()
+		await app.dispose()
+		await expect(older).rejects.toThrow(/disposed before its body started/)
+		await newer
+		expect(events).toEqual(['older factory aborted'])
+	})
+
+	test('a run whose owner started disposing never starts its body, even before disposal reaches it', async () => {
+		const events: string[] = []
+		const opened = gate()
+		const { starting, StartingJob } = startingJob(events, opened.promise, false)
+		const app = await container().provide(StartingJob, Job).build()
+		const older = app.get(StartingJob)({ input: { id: 'older' } }, () => {
+			events.push('older body ran')
+		})
+		// Handled now: it rejects while the test still waits on disposal.
+		older.catch(() => {})
+		await starting
+		const release = gate()
+		const newer = app.get(Job)({ input: { id: 'newer' } }, () => release.promise)
+		await nextTask()
+		const disposing = app.dispose()
+		// The older run finishes starting while disposal still waits for the newer body.
+		opened.open()
+		await nextTask()
+		release.open()
+		await disposing
+		await newer
+		await expect(older).rejects.toThrow(/disposed before its body started/)
+		expect(events).not.toContain('older body ran')
+	})
+
 	test('declared inputs must cover what the entry needs', async () => {
 		const Other = slot('Other', { scope: JobScope })<number>()
 		const Needy = service('Needy', { input: JobInput, other: Other }, (d) => d)
