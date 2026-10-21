@@ -130,4 +130,71 @@ describe('services reached only through executions', () => {
 		expect(error).toBeInstanceOf(DowelError)
 		expect((error as DowelError).code).toBe('DISPOSED')
 	})
+
+	test('get() still returns values and runners only an execution reaches', async () => {
+		const Config = slot('Config')<{ from: string }>()
+		const Task = scope('task', PerRequest)
+		const Audit = service('Audit', { config: Config, request: Request }, (deps) => deps)
+		const Record = execution('Record', { scope: Task, entry: Audit })
+		const Inner = execution('Inner', { scope: JobScope, entry: Config })
+		const Outer = service('Outer', { inner: Inner }, ({ inner }) => inner)
+		const OuterJob = execution('OuterJob', { scope: JobScope, entry: Outer })
+		const Handler = service(
+			'Handler',
+			{ request: Request, record: Record, job: OuterJob },
+			() => ({}),
+		)
+		const app = await container().provide(Handler).bind(Config, { from: 'config' }).build()
+		expect(app.get(Config)).toEqual({ from: 'config' })
+		expect(app.get(Inner)).toBeInstanceOf(Function)
+		const request = await app.open(PerRequest, bind(Request, { url: '/a' }))
+		expect(request.get(Request)).toEqual({ url: '/a' })
+	})
+
+	test('disposing the owner of a run waiting on a shared creation stops the wait, not the creation', async () => {
+		let created = 0
+		const starting = gate()
+		const ready = gate()
+		const Pool = service('Pool', async () => {
+			created++
+			starting.open()
+			await ready.promise
+			return 'pool'
+		})
+		const Task = scope('task', PerRequest)
+		const Query = execution('Query', { scope: Task, entry: Pool })
+		const Handler = service('Handler', { request: Request, query: Query }, ({ query }) => query)
+		const app = await container().provide(Handler).build()
+		const first = await app.open(PerRequest, bind(Request, { url: '/a' }))
+		const waiting = first.get(Handler)((pool) => pool)
+		await starting.promise
+		// Disposal neither waits for the shared creation nor aborts it.
+		await first.dispose()
+		await expect(waiting).rejects.toThrow(/disposed before its body started/)
+		ready.open()
+		const second = await app.open(PerRequest, bind(Request, { url: '/b' }))
+		expect(await second.get(Handler)((pool) => pool)).toBe('pool')
+		expect(created).toBe(1)
+	})
+
+	test('a run leaves to a nested run what only the nested entry reaches', async () => {
+		let attempts = 0
+		const Smtp = service('Smtp', () => {
+			attempts++
+			throw new Error('bad credentials')
+		})
+		const Sub = scope('sub', JobScope)
+		const Mail = execution('Mail', { scope: Sub, entry: Smtp })
+		const Worker = service('Worker', { mail: Mail, to: To }, ({ mail, to }) => ({
+			report: () => `no mail for ${to}`,
+			mail: () => mail((smtp) => smtp),
+		}))
+		const Work = execution('Work', { scope: JobScope, entry: Worker, inputs: { to: To } })
+		const app = await container().provide(Work).build()
+		expect(await app.get(Work)({ to: 'a' }, (worker) => worker.report())).toBe('no mail for a')
+		expect(attempts).toBe(0)
+		await expect(app.get(Work)({ to: 'b' }, (worker) => worker.mail())).rejects.toThrow(
+			'bad credentials',
+		)
+	})
 })

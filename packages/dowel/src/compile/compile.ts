@@ -506,10 +506,11 @@ class Compiler {
 	/**
 	 * What a run at `scope` needs to resolve `entry`: the cached plans in its
 	 * own store that `entry` reaches, the scoped slots there it reaches through
-	 * required dependencies, and the cached plans it reaches in the scopes
-	 * above, of which compilation later keeps those not created eagerly. A
-	 * nested execution whose scopes open at `scope` or above resolves those
-	 * from its own store, so it is not followed.
+	 * required dependencies, and the cached plans in the scopes above that the
+	 * run resolves itself, of which compilation later keeps those not created
+	 * eagerly. A nested execution whose scopes open at `scope` or above
+	 * resolves those from its own store, so it is not followed; above its
+	 * scope, a nested run creates what only its entry reaches.
 	 */
 	private needsOf(entry: Plan, scope: ScopePlan): { needs: ScopeNeeds; lazy: LazyDraft[] } {
 		const { depth } = scope.scope
@@ -526,15 +527,23 @@ class Compiler {
 			for (const dep of current.deps) walk(dep.plan, dep.optional)
 		}
 		walk(entry, false)
+		const order = scope.cached.filter((plan) => reached.has(plan))
+		// Above its scope, the run creates what its entry and own instances resolve, not what nested entries do.
+		const resolved = new Set<Plan>()
+		const resolve = (current: Plan): void => {
+			if (resolved.has(current)) return
+			resolved.add(current)
+			if (current.kind === 'execution') return
+			for (const dep of current.deps) resolve(dep.plan)
+		}
+		resolve(entry)
+		for (const plan of order) resolve(plan)
 		const lazy: LazyDraft[] = []
 		for (let above = scope.scope.parent; above !== null; above = above.parent) {
-			const order = this.scopeDraft(above).cached.filter((plan) => reached.has(plan))
-			lazy.unshift({ depth: above.depth, order })
+			const created = this.scopeDraft(above).cached.filter((plan) => resolved.has(plan))
+			lazy.unshift({ depth: above.depth, order: created })
 		}
-		return {
-			needs: { order: scope.cached.filter((plan) => reached.has(plan)), required },
-			lazy,
-		}
+		return { needs: { order, required }, lazy }
 	}
 }
 

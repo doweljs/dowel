@@ -253,12 +253,24 @@ export type BoundExecutionInputs<S extends ContainerState> = BoundInputs<S['grap
 
 type Check<Name extends string, N, S extends ContainerState, Current extends ScopeMeta> =
 	Name extends ReachEager<S['graph'], S['roots']>
-		? EntryOf<S['graph'], Name>['scope'] extends Current['name'] | Current['above']
-			? N
-			: NotVisible<Name, EntryOf<S['graph'], Name>['scope']>
+		? VisibleCheck<Name, N, S, Current>
 		: Name extends Reachable<S>
-			? CreatedOnDemand<Name>
+			? EntryOf<S['graph'], Name>['kind'] extends CreatedKind
+				? CreatedOnDemand<Name>
+				: VisibleCheck<Name, N, S, Current>
 			: NotProvided<Name>
+
+/** Entries resolving which creates an instance; the rest are values or runners. */
+type CreatedKind = 'service' | 'many' | 'bound' | 'alias'
+
+type VisibleCheck<
+	Name extends string,
+	N,
+	S extends ContainerState,
+	Current extends ScopeMeta,
+> = EntryOf<S['graph'], Name>['scope'] extends Current['name'] | Current['above']
+	? N
+	: NotVisible<Name, EntryOf<S['graph'], Name>['scope']>
 
 export type Resolvable<N, S extends ContainerState, Current extends ScopeMeta> =
 	N extends Service<any, infer M>

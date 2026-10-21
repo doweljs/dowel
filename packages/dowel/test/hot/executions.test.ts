@@ -196,4 +196,40 @@ describe('executions across replacements', () => {
 		expect(await app.get(Api)()).toBe(1)
 		expect(created).toBe(1)
 	})
+
+	test('a service a run creates on demand while an update initializes is carried over', async () => {
+		const Job = scope('job')
+		let created = 0
+		const Mailer = service('Mailer', () => ({ id: ++created }))
+		const Send = execution('Send', { scope: Job, entry: Mailer })
+		const Api = service(
+			'Api',
+			{ send: Send },
+			({ send }) =>
+				() =>
+					send((mailer) => mailer.id),
+		)
+		const Other = service('Other', () => 1)
+		await update('mail.ts', { Job, Mailer, Send, Api })
+		await update('other.ts', { Other })
+		const app = await container().provide(Api, Other).build()
+
+		const held = gate()
+		const initializing = gate()
+		const updating = update('other.ts', {
+			Other: service('Other', async () => {
+				initializing.open()
+				await held.promise
+				return 2
+			}),
+		})
+		await initializing.promise
+		// The run uses the committed generation while the proposal is still initializing.
+		expect(await app.get(Api)()).toBe(1)
+		held.open()
+		await updating
+		expect(app.get(Other)).toBe(2)
+		expect(await app.get(Api)()).toBe(1)
+		expect(created).toBe(1)
+	})
 })

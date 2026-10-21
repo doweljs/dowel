@@ -146,6 +146,6 @@ export interface Compiled {
 	readonly graph: readonly GraphNode[]
 	/** Scope plans by scope name. Always contains `root`. */
 	readonly scopes: ReadonlyMap<string, ScopePlan>
-	/** Plans created with their container, and so resolvable with `get()`: what the roots reach outside executions. */
+	/** What the roots reach outside executions; of the cached plans, only these are created with their container, and so resolvable with `get()`. */
 	readonly eager: ReadonlySet<Plan>
 }

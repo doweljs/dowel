@@ -178,3 +178,15 @@ test('get() accepts what the container creates, not what only an execution reach
 	const both = await container().provide(Api, Mailer).build()
 	expectTypeOf(both.get(Mailer).send).toEqualTypeOf<(to: string) => string>()
 })
+
+test('get() still accepts values only an execution reaches', async () => {
+	const JobScope = scope('job')
+	const Config = slot('Config')<{ url: string }>()
+	const Uses = service('Uses', { config: Config }, ({ config }) => config)
+	const Run = execution('Run', { scope: JobScope, entry: Uses })
+	const Api = service('Api', { run: Run }, ({ run }) => run)
+	const app = await container().provide(Api).bind(Config, { url: 'x' }).build()
+	expectTypeOf(app.get(Config)).toEqualTypeOf<{ url: string }>()
+	// @ts-expect-error: a service, which runs create
+	app.get(Uses)
+})
