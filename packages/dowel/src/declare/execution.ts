@@ -1,6 +1,6 @@
 import type { RunContext, RunOptions } from '../api.ts'
 import { DowelError } from '../errors.ts'
-import type { DeclaredScope, Named } from '../model/checks.ts'
+import type { DeclaredName, DeclaredNames, DeclaredScope, LiteralName } from '../model/checks.ts'
 import type {
 	AnyScope,
 	AnyService,
@@ -64,9 +64,9 @@ export interface ExecutionOptions<
 	/** The scope each run opens a container for. The runner itself lives in that scope's parent. */
 	readonly scope: Sc & DeclaredScope<Sc>
 	/** The node handed to the body; it must live in the scope or above. */
-	readonly entry: E & EntryCheck<Sc, E>
+	readonly entry: E & EntryCheck<Sc, E> & DeclaredName<E>
 	/** Scoped slots each run supplies, by the key the runner takes each value by. */
-	readonly inputs?: I
+	readonly inputs?: I & DeclaredNames<I>
 }
 
 export type ComputeExecutionMeta<
@@ -115,9 +115,17 @@ export function execution<
 	E extends AnyService | AnySlot,
 	const I extends InputSlots<Sc> = {},
 >(
-	name: N,
+	name: LiteralName<N>,
 	options: ExecutionOptions<Sc, E, I>,
-): Named<N, Execution<Runner<Infer<E>, I>, ComputeExecutionMeta<N, Sc, E, I>>> {
+): Execution<Runner<Infer<E>, I>, ComputeExecutionMeta<N, Sc, E, I>>
+export function execution(
+	name: string,
+	options: {
+		readonly scope: AnyScope
+		readonly entry: AnyService | AnySlot
+		readonly inputs?: { readonly [key: string]: AnySlot }
+	},
+): unknown {
 	const scope = scopeNode(options.scope)
 	if (scope.parent === null) {
 		throw new DowelError(
@@ -171,5 +179,5 @@ export function execution<
 		name,
 		scope: scope.parent.name,
 		[internal]: node,
-	}) as unknown as Named<N, Execution<Runner<Infer<E>, I>, ComputeExecutionMeta<N, Sc, E, I>>>
+	})
 }

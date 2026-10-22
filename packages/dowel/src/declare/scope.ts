@@ -1,18 +1,9 @@
 import { DowelError } from '../errors.ts'
-import type { DeclaredScope, Named } from '../model/checks.ts'
-import type { AnyScope, Scope, ScopeMeta } from '../model/declarations.ts'
-import type { ReservedScopeName } from '../model/diagnostics.ts'
+import type { DeclaredScope, ScopeName } from '../model/checks.ts'
+import type { AnyScope, Scope } from '../model/declarations.ts'
 import type { MetaOf } from '../model/infer.ts'
 import { scopeNode } from '../nodes/coerce.ts'
 import { allocateId, internal, ROOT, type ScopeNode } from '../nodes/node.ts'
-
-/**
- * The scope declared as `N`. The container's own scope name, `root`, is
- * rejected at the type level too: scopes are identified by name.
- */
-type Declared<N extends string, M extends ScopeMeta> = [N] extends ['root']
-	? ReservedScopeName<N>
-	: Named<N, Scope<M>>
 
 /**
  * Declare a scope: a lifetime shorter than the container's, such as one
@@ -29,19 +20,16 @@ type Declared<N extends string, M extends ScopeMeta> = [N] extends ['root']
  * opened, and every service depending on it lives in that scope.
  */
 export function scope<N extends string>(
-	name: N,
-): Declared<N, { readonly name: N; readonly parent: 'root'; readonly above: 'root' }>
+	name: ScopeName<N>,
+): Scope<{ readonly name: N; readonly parent: 'root'; readonly above: 'root' }>
 export function scope<N extends string, P extends AnyScope>(
-	name: N,
+	name: ScopeName<N>,
 	parent: P & DeclaredScope<P>,
-): Declared<
-	N,
-	{
-		readonly name: N
-		readonly parent: MetaOf<P>['name']
-		readonly above: MetaOf<P>['name'] | MetaOf<P>['above']
-	}
->
+): Scope<{
+	readonly name: N
+	readonly parent: MetaOf<P>['name']
+	readonly above: MetaOf<P>['name'] | MetaOf<P>['above']
+}>
 export function scope(name: string, parent?: AnyScope): unknown {
 	if (name === ROOT.name) {
 		throw new DowelError(

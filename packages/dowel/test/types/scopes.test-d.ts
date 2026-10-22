@@ -13,6 +13,7 @@ import {
 	service,
 	slot,
 } from '../../src/index.ts'
+import type { ScopeName } from '../../src/model/checks.ts'
 import type { MetaOf } from '../../src/model/infer.ts'
 import { Logger, test, Users } from './support.ts'
 
@@ -32,8 +33,9 @@ test('nested scopes', () => {
 	const RequestScope = scope('request', SessionScope)
 	const JobScope = scope('job')
 	const reserved = () => {
-		// The container's own scope name is reserved.
-		expectTypeOf(scope('root', SessionScope)).toEqualTypeOf<ReservedScopeName<'root'>>()
+		expectTypeOf<ScopeName<'root'>>().toEqualTypeOf<ReservedScopeName<'root'>>()
+		// @ts-expect-error: the container's own scope name is reserved
+		scope('root', SessionScope)
 	}
 	void reserved
 	const Sess = slot('Sess', { scope: SessionScope })<{ id: string }>()

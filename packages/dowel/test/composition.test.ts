@@ -204,7 +204,7 @@ describe('declaration rules mirror the types', () => {
 	})
 
 	test("the container's own scope name is reserved", () => {
-		expect(() => scope('root' as string, scope('outer'))).toThrow(/reserved/)
+		expect(() => scope(untyped('root'), scope('outer'))).toThrow(/reserved/)
 	})
 
 	test('only services and values can stand in for a node', () => {
