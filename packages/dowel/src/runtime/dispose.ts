@@ -1,6 +1,7 @@
 /** Disposal of instances and stores, shared by the runtime and hot replacement. */
 
 import { DowelError, errorsOf } from '../errors.ts'
+import { cancelStore } from './cancel.ts'
 import { clearStore, type InstanceRecord, type Store } from './store.ts'
 
 /**
@@ -49,8 +50,8 @@ export async function disposeRecords(
  */
 export async function disposeStore(store: Store, what: string): Promise<void> {
 	store.disposed = true
-	// Tell factories and runs still going to give up; disposal waits for them below.
-	cancelStore(store)
+	// Tell factories and runs still going beneath it to give up; disposal waits for them below.
+	cancelStore(store, () => cancellation(`Scope '${store.scope.name}' is being disposed.`))
 	const failures: unknown[] = []
 	try {
 		await disposeChildren(store)
@@ -76,28 +77,13 @@ export function markDisposed(record: InstanceRecord): void {
 	abortSignal(record)
 }
 
-/**
- * Stops a store from starting factories, and aborts the signals of those
- * still running. A signal not yet read is created aborted, so a factory that
- * reads `ctx.signal` later sees it aborted. What it waits for in stores above
- * keeps running for whoever else shares it; the store just stops waiting.
- */
-export function cancelStarting(store: Store): void {
-	store.cancelled = true
-	for (const stop of store.onStop) stop()
-	store.onStop.clear()
-	for (const record of store.starting) {
-		record.controller ??= new AbortController()
-		abortSignal(record)
-	}
-}
-
-/** The signal behind `ctx.signal`, created on first use, and aborted already if disposal has started. */
+/** The signal behind `ctx.signal`, created on first use, and aborted already if disposal or cancellation has started. */
 export function signalOf(record: InstanceRecord, store: Store): AbortSignal {
 	if (record.controller === null) {
 		record.controller = new AbortController()
-		// Created late: the disposal it reports may have started already.
-		if (record.disposed || (store.disposed && store.starting.has(record))) abortSignal(record)
+		// Created late: what it reports may have happened already.
+		if (record.disposed) abortSignal(record)
+		else if (store.cancelled && store.starting.has(record)) record.controller.abort(store.why!())
 	}
 	return record.controller.signal
 }
@@ -106,31 +92,36 @@ function abortSignal(record: InstanceRecord): void {
 	record.controller?.abort(cancellation(`Service '${record.plan.name}' is being disposed.`))
 }
 
-const cancellations = new WeakSet<object>()
+/** What a cancellation reports: a disposal, or a failure while the store it names initialized. */
+export type Cancelled =
+	| { readonly kind: 'disposal' }
+	| { readonly kind: 'failure'; readonly store: Store }
+
+const disposal: Cancelled = { kind: 'disposal' }
+const cancellations = new WeakMap<object, Cancelled>()
 
 /**
  * An error that only reports a cancellation, such as the reason a signal
  * aborts with. Reported after the failure or disposal that caused it, it
  * adds nothing.
  */
-export function cancellation(message: string): DowelError {
-	const error = new DowelError('DISPOSED', message)
-	cancellations.add(error)
+export function cancellation(
+	message: string,
+	cancelled: Cancelled = disposal,
+	options?: ErrorOptions,
+): DowelError {
+	const error = new DowelError('DISPOSED', message, options)
+	cancellations.set(error, cancelled)
 	return error
 }
 
-export function isCancellation(error: unknown): boolean {
-	return typeof error === 'object' && error !== null && cancellations.has(error)
+/** What a cancellation reports, or `undefined` for any other error. */
+export function cancelledBy(error: unknown): Cancelled | undefined {
+	return typeof error === 'object' && error !== null ? cancellations.get(error) : undefined
 }
 
-/**
- * Aborts every run and starting factory at and beneath a store, without
- * waiting for anything, so the order does not matter. One opened while it
- * cancels is reached too.
- */
-export function cancelStore(store: Store): void {
-	cancelStarting(store)
-	for (const child of store.children) child.cancel()
+export function isCancellation(error: unknown): boolean {
+	return cancelledBy(error) !== undefined
 }
 
 /** Disposes what a store owns, newest first, one after another, collecting failures. */

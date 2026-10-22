@@ -10,6 +10,8 @@ import type { ScopeNode } from '../nodes/node.ts'
 
 export const UNSET: unique symbol = Symbol('dowel.unset')
 
+export const noop = (): void => {}
+
 /** Releases a resource, or runs a deferred callback. */
 export type Disposer = () => void | PromiseLike<void>
 
@@ -34,8 +36,8 @@ export interface InstanceRecord {
 
 /** Something a store owns and disposes before itself: an opened container or a running execution. */
 export interface Child {
-	/** Aborts the runs and starting factories at and beneath it, without waiting for anything. */
-	cancel(): void
+	/** Its own store, which a cancellation of its owner's reaches. */
+	readonly store: Store
 	dispose(): Promise<void>
 }
 
@@ -44,16 +46,22 @@ export interface Store {
 	readonly cells: unknown[]
 	/** In-flight initializations, by cell. Allocated on first async init. */
 	pending: (Promise<unknown> | undefined)[] | null
-	/** Instances whose factory has not settled yet; their signals abort when the store is disposed. */
+	/** Instances whose factory has not settled yet; their signals abort when the store is cancelled. */
 	readonly starting: Set<InstanceRecord>
 	/**
 	 * Set once the store stops starting factories: its initialization failed,
-	 * or its disposal began. A factory still waiting on its dependencies then
-	 * never runs.
+	 * its disposal or an owner's began, or the caller of its run gave up. A
+	 * factory still waiting on its dependencies then never runs, and what
+	 * waits on a store above stops waiting. See `cancel.ts`.
 	 */
 	cancelled: boolean
-	/** Called once it stops starting factories, so what waits on a store above stops waiting. */
-	readonly onStop: Set<() => void>
+	/**
+	 * Why it was cancelled, made when first asked, since most cancellations,
+	 * such as a run finishing, are never observed; `null` until then.
+	 */
+	why: (() => unknown) | null
+	/** Called once it is cancelled; allocated when something first listens. */
+	cancelListeners: ((why: () => unknown) => void)[] | null
 	/** Instantiated cached nodes in creation order. */
 	readonly records: InstanceRecord[]
 	/** Scopes and executions opened from this store, disposed before it. */
@@ -66,14 +74,21 @@ export interface Store {
 /** The stores a resolution can see: index `d` is the store at depth `d`. */
 export type Chain = readonly Store[]
 
-export function newStore(scope: ScopeNode, size: number, owned: WeakSet<object>): Store {
+/** A store under `parent`, if any: born cancelled if `parent` is. */
+export function newStore(
+	scope: ScopeNode,
+	size: number,
+	owned: WeakSet<object>,
+	parent: Store | null,
+): Store {
 	return {
 		scope,
 		cells: new Array(size).fill(UNSET),
 		pending: null,
 		starting: new Set(),
-		cancelled: false,
-		onStop: new Set(),
+		cancelled: parent?.cancelled ?? false,
+		why: parent?.why ?? null,
+		cancelListeners: null,
 		records: [],
 		children: new Set(),
 		owned,
