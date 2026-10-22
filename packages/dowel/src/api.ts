@@ -129,8 +129,10 @@ export interface NodeInfo {
 export interface ContainerBuilder<S extends ContainerState> {
 	/**
 	 * Add roots and bindings. Services, executions and slots given here are
-	 * activated at `build()` together with everything they reach; bindings
-	 * only make implementations available and are activated when reached.
+	 * activated at `build()` together with what they reach outside an
+	 * execution; what only an execution reaches is created by the first run
+	 * that needs it. Bindings only make implementations available and are
+	 * activated when reached.
 	 */
 	provide<const I extends readonly Providable[]>(
 		...items: I & KnownLength<I>
