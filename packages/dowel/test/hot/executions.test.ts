@@ -393,4 +393,113 @@ describe('executions across replacements', () => {
 		expect(await app.get(Api)()).toBe('new')
 		await expect(stale).rejects.toThrow(/disposed/)
 	})
+
+	/** A factory that settles only once aborted, the first time; later creations are immediate. */
+	function stubbornFirst(value: string) {
+		let created = 0
+		const starting = gate()
+		const factory = async (ctx: { signal: AbortSignal }): Promise<string> => {
+			if (++created === 1) {
+				starting.open()
+				await new Promise((resolve) => ctx.signal.addEventListener('abort', resolve))
+			}
+			return value
+		}
+		return { factory, starting: starting.promise, created: () => created }
+	}
+
+	test('an update does not wait for a carried creation blocked on an obsolete one through a runner', async () => {
+		const Job = scope('job')
+		const conn = stubbornFirst('old conn')
+		const Conn = service('Conn', (ctx) => conn.factory(ctx))
+		const Query = execution('Query', { scope: Job, entry: Conn })
+		// Unchanged, but warms up by running a query while it is created.
+		const Warm = service('Warm', { query: Query }, async ({ query }) => ({
+			warmed: await query((value) => value).catch(() => 'aborted'),
+			query,
+		}))
+		const UseWarm = execution('UseWarm', { scope: Job, entry: Warm })
+		const Api = service(
+			'Api',
+			{ use: UseWarm },
+			({ use }) =>
+				() =>
+					use((warm) => warm),
+		)
+		await update('conn.ts', { Job, Conn, Query })
+		await update('warm.ts', { Warm, UseWarm, Api })
+		const app = await container().provide(Api).build()
+		const first = app.get(Api)()
+		first.catch(() => {})
+		await conn.starting
+		await update('conn.ts', { Job, Conn: service('Conn', () => 'new conn'), Query })
+		const warm = await app.get(Api)()
+		// The obsolete creation was aborted and finished, so the carried service finished warming up.
+		expect(warm.warmed).toBe('old conn')
+		expect(await warm.query((value) => value)).toBe('new conn')
+	})
+
+	test('an update does not wait for a creation whose dependency it created anew', async () => {
+		const Job = scope('job')
+		const config = stubbornFirst('config')
+		const Config = service('Config', (ctx) => config.factory(ctx))
+		const Conn = service('Conn', { config: Config }, ({ config }) => ({ config }))
+		const Query = execution('Query', { scope: Job, entry: Conn })
+		const Api = service(
+			'Api',
+			{ query: Query },
+			({ query }) =>
+				() =>
+					query((conn) => conn),
+		)
+		const Other = service('Other', () => 1)
+		await update('conn.ts', { Job, Config, Conn, Query, Api })
+		await update('other.ts', { Other })
+		const app = await container().provide(Api, Other).build()
+		const stale = app.get(Api)()
+		stale.catch(() => {})
+		await config.starting
+		// Other now reaches Config, so the proposal creates its own instead of carrying the old one.
+		await update('other.ts', { Other: service('Other', { config: Config }, () => 2) })
+		expect(app.get(Other)).toBe(2)
+		expect((await app.get(Api)()).config).toBe('config')
+		expect(config.created()).toBe(2)
+	})
+
+	test('an update aborts an obsolete creation and still carries a carriable one in flight with it', async () => {
+		const Job = scope('job')
+		let mailers = 0
+		const mailerStarting = gate()
+		const mailerReady = gate()
+		const Mailer = service('Mailer', async () => {
+			const id = ++mailers
+			mailerStarting.open()
+			await mailerReady.promise
+			return { id }
+		})
+		const conn = stubbornFirst('old conn')
+		const Conn = service('Conn', (ctx) => conn.factory(ctx))
+		const Send = execution('Send', { scope: Job, entry: Mailer })
+		const Query = execution('Query', { scope: Job, entry: Conn })
+		const Api = service('Api', { send: Send, query: Query }, ({ send, query }) => ({
+			send: () => send((mailer) => mailer.id),
+			query: () => query((value) => value),
+		}))
+		await update('mail.ts', { Job, Mailer, Send })
+		await update('conn.ts', { Conn, Query })
+		await update('api.ts', { Api })
+		const app = await container().provide(Api).build()
+		const sending = app.get(Api).send()
+		const querying = app.get(Api).query()
+		sending.catch(() => {})
+		querying.catch(() => {})
+		await Promise.all([mailerStarting.promise, conn.starting])
+		const updating = update('conn.ts', { Conn: service('Conn', () => 'new conn'), Query })
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		mailerReady.open()
+		await updating
+		expect(await app.get(Api).query()).toBe('new conn')
+		expect(await app.get(Api).send()).toBe(1)
+		expect(mailers).toBe(1)
+	})
 })
