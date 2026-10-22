@@ -1,6 +1,6 @@
 {
 	"name": "@doweljs/vite",
-	"version": "0.2.0",
+	"version": "0.3.0",
 	"description": "Vite plugin for dowel: hot replacement of services and graph diagnostics.",
 	"license": "MIT",
 	"repository": {
@@ -31,7 +31,7 @@
 		"build": "rm -rf dist && tsc -p tsconfig.build.json"
 	},
 	"peerDependencies": {
-		"@doweljs/core": "^0.2.0",
+		"@doweljs/core": "^0.3.0",
 		"vite": "^8.3.4"
 	},
 	"dependencies": {
