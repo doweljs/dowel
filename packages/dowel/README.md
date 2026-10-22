@@ -205,7 +205,7 @@ Each call to the runner:
 
 The runner takes an object with a value for each input, typed from `inputs`. An execution without inputs takes only the body. `build()` isn't callable while the inputs don't cover what the entry needs: `IncompleteExecutions<{ RunJob: "Other" }>`.
 
-A run belongs to the container its runner was resolved from. Disposing that container aborts the `signal` the body receives as its second argument, as in `runJob({ job }, (runner, { signal }) => runner.run(signal))`. It then waits for the body to settle before disposing the run's container and its own instances, so a body never sees what it uses closed beneath it. A body that ignores the signal keeps disposal waiting. A run disposed before its body starts never starts it, and rejects with `DISPOSED`.
+A run belongs to the container its runner was resolved from. Disposing that container aborts the `signal` the body receives as its second argument, as in `runJob({ job }, (runner, { signal }) => runner.run(signal))`. It then waits for the body to settle before disposing the run's container and its own instances, so a body never sees what it uses closed beneath it. A body that ignores the signal keeps disposal waiting. Disposal aborts every run beneath the container, in opened containers and nested runs included, before it waits for any of them, so a run that waits on another during shutdown doesn't deadlock. A run whose disposal, or its owner's, starts before its body does never starts the body, and rejects with `DISPOSED`.
 
 ### Multi-bindings
 

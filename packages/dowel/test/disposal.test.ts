@@ -186,7 +186,7 @@ describe('ownership and disposal', () => {
 		await started.promise
 		await app.dispose()
 		expect((reason as DowelError).code).toBe('DISPOSED')
-		await expect(opening).rejects.toThrow(/being disposed/)
+		await expect(opening).rejects.toThrow(/'request' was disposed while it opened/)
 	})
 
 	test('a context refuses new resources once its instance is disposed', async () => {

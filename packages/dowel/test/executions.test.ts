@@ -177,6 +177,232 @@ describe('executions', () => {
 		}
 	})
 
+	/** A body that settles only once its signal aborts. */
+	const untilAborted =
+		(events: string[], id: string) =>
+		(_runner: unknown, { signal }: { signal: AbortSignal }) =>
+			new Promise<void>((resolve) => {
+				signal.addEventListener('abort', () => {
+					events.push(`${id} aborted`)
+					resolve()
+				})
+			})
+
+	test('disposal aborts every run before waiting for any, so a run may wait on an older one', async () => {
+		const events: string[] = []
+		const app = await container().provide(Job).build()
+		const job = app.get(Job)
+		const producer = job({ input: { id: 'producer' } }, untilAborted(events, 'producer'))
+		// The newer run is waited for first, and finishes only once the older one stops.
+		const consumer = job({ input: { id: 'consumer' } }, async () => {
+			await producer
+			events.push('consumer drained')
+		})
+		await nextTask()
+		await app.dispose()
+		await consumer
+		expect(events).toEqual(['producer aborted', 'consumer drained'])
+	})
+
+	test('disposal aborts runs in every opened container before waiting for any', async () => {
+		const events: string[] = []
+		const Task = scope('task', PerRequest)
+		const RequestJob = execution('RequestJob', { scope: Task, entry: Clock })
+		const app = await container().provide(RequestJob).build()
+		const first = await app.open(PerRequest, bind(Request, { url: '/first' }))
+		const second = await app.open(PerRequest, bind(Request, { url: '/second' }))
+		const producer = first.get(RequestJob)(untilAborted(events, 'producer'))
+		// The newer container is disposed first, and its run waits on a run in the older one.
+		const consumer = second.get(RequestJob)(async () => {
+			await producer
+			events.push('consumer drained')
+		})
+		await nextTask()
+		await app.dispose()
+		await consumer
+		expect(events).toEqual(['producer aborted', 'consumer drained'])
+	})
+
+	test('disposal aborts runs nested in a run before waiting for its body', async () => {
+		const events: string[] = []
+		const SubTask = scope('subtask', JobScope)
+		// Lives in the job scope, so its runs belong to the outer run.
+		const InnerJob = execution('InnerJob', { scope: SubTask, entry: Clock })
+		const Nested = service('Nested', { inner: InnerJob }, ({ inner }) => inner)
+		const OuterJob = execution('OuterJob', { scope: JobScope, entry: Nested })
+		const app = await container().provide(OuterJob).build()
+		// The outer body ignores its own signal and waits for the inner run.
+		const outer = app.get(OuterJob)(async (inner) => {
+			await inner(untilAborted(events, 'inner'))
+			events.push('outer done')
+		})
+		await nextTask()
+		await app.dispose()
+		await outer
+		expect(events).toEqual(['inner aborted', 'outer done'])
+	})
+
+	test("a run that finishes on its own leaves its body's signal alone", async () => {
+		const app = await container().provide(Job).build()
+		const signals: AbortSignal[] = []
+		await app.get(Job)(
+			{ input: { id: 'done' } },
+			(_runner, { signal }) => void signals.push(signal),
+		)
+		await expect(
+			app.get(Job)({ input: { id: 'failed' } }, (_runner, { signal }) => {
+				signals.push(signal)
+				throw new Error('body failed')
+			}),
+		).rejects.toThrow('body failed')
+		expect(signals.map((signal) => signal.aborted)).toEqual([false, false])
+	})
+
+	/** A job whose entry keeps starting until `opened` settles, or, if `honour`, its signal aborts. */
+	function startingJob(events: string[], opened: Promise<void>, honour: boolean) {
+		const starting = gate()
+		const Starting = service('Starting', { input: JobInput }, async ({ input }, ctx) => {
+			starting.open()
+			const aborted = new Promise<void>((resolve) => {
+				ctx.signal.addEventListener('abort', () => {
+					events.push(`${input.id} factory aborted`)
+					resolve()
+				})
+			})
+			await (honour ? Promise.race([opened, aborted]) : opened)
+			return input.id
+		})
+		const StartingJob = execution('StartingJob', {
+			scope: JobScope,
+			entry: Starting,
+			inputs: { input: JobInput },
+		})
+		return { starting: starting.promise, StartingJob }
+	}
+
+	test('disposal aborts factories still starting in runs before waiting for any run', async () => {
+		const events: string[] = []
+		const { starting, StartingJob } = startingJob(events, new Promise<void>(() => {}), true)
+		const app = await container().provide(StartingJob, Job).build()
+		const older = app.get(StartingJob)({ input: { id: 'older' } }, () => {
+			events.push('older body ran')
+		})
+		await starting
+		// The newer run is waited for first, and finishes only once the older one settles.
+		const newer = app.get(Job)({ input: { id: 'newer' } }, () => older.catch(() => {}))
+		await nextTask()
+		await app.dispose()
+		await expect(older).rejects.toThrow(/disposed before its body started/)
+		await newer
+		expect(events).toEqual(['older factory aborted'])
+	})
+
+	test('a run whose owner started disposing never starts its body, even before disposal reaches it', async () => {
+		const events: string[] = []
+		const opened = gate()
+		const { starting, StartingJob } = startingJob(events, opened.promise, false)
+		const app = await container().provide(StartingJob, Job).build()
+		const older = app.get(StartingJob)({ input: { id: 'older' } }, () => {
+			events.push('older body ran')
+		})
+		// Handled now: it rejects while the test still waits on disposal.
+		older.catch(() => {})
+		await starting
+		const release = gate()
+		const newer = app.get(Job)({ input: { id: 'newer' } }, () => release.promise)
+		await nextTask()
+		const disposing = app.dispose()
+		// The older run finishes starting while disposal still waits for the newer body.
+		opened.open()
+		await nextTask()
+		release.open()
+		await disposing
+		await newer
+		await expect(older).rejects.toThrow(/disposed before its body started/)
+		expect(events).not.toContain('older body ran')
+	})
+
+	test('a body that starts disposing its owner synchronously is still waited for', async () => {
+		const events: string[] = []
+		const Res = service('Res', { input: JobInput }, (_deps, ctx) => {
+			const res = { open: true }
+			ctx.defer(() => {
+				res.open = false
+				events.push('res disposed')
+			})
+			return res
+		})
+		const UseRes = execution('UseRes', { scope: JobScope, entry: Res, inputs: { input: JobInput } })
+		const app = await container().provide(UseRes).build()
+		let disposing: Promise<void> | undefined
+		await app.get(UseRes)({ input: { id: 'x' } }, async (res) => {
+			disposing = app.dispose()
+			await nextTask()
+			events.push(`used, open: ${res.open}`)
+		})
+		await disposing
+		expect(events).toEqual(['used, open: true', 'res disposed'])
+	})
+
+	test('a run aborted while it opens reports the disposal, however its factory fails on the abort', async () => {
+		const starting = gate()
+		const Connect = service('Connect', { input: JobInput }, (_deps, ctx) => {
+			starting.open()
+			return new Promise((_resolve, reject) => {
+				ctx.signal.addEventListener('abort', () =>
+					reject(new DOMException('The operation was aborted.', 'AbortError')),
+				)
+			})
+		})
+		const ConnectJob = execution('ConnectJob', {
+			scope: JobScope,
+			entry: Connect,
+			inputs: { input: JobInput },
+		})
+		const app = await container().provide(ConnectJob).build()
+		const running = app.get(ConnectJob)({ input: { id: 'x' } }, () => 'ran')
+		running.catch(() => {})
+		await starting.promise
+		await app.dispose()
+		const error = await running.then(
+			() => null,
+			(failure: unknown) => failure,
+		)
+		expect((error as DowelError).code).toBe('DISPOSED')
+		expect((error as Error).message).toMatch(/disposed before its body started/)
+	})
+
+	test('a run disposed before its body starts reports the disposal first when cleanup fails too', async () => {
+		const opened = gate()
+		const Leaky = service('Leaky', { input: JobInput }, async (_deps, ctx) => {
+			ctx.defer(() => {
+				throw new Error('cleanup failed')
+			})
+			await opened.promise
+			return {}
+		})
+		const LeakyJob = execution('LeakyJob', {
+			scope: JobScope,
+			entry: Leaky,
+			inputs: { input: JobInput },
+		})
+		const app = await container().provide(LeakyJob).build()
+		const running = app.get(LeakyJob)({ input: { id: 'x' } }, () => 'ran')
+		running.catch(() => {})
+		await nextTask()
+		const disposing = app.dispose().catch(() => {})
+		// The factory ignores the abort and finishes; the body never starts.
+		opened.open()
+		await disposing
+		const error = (await running.then(
+			() => null,
+			(failure: unknown) => failure,
+		)) as AggregateError
+		expect(error).toBeInstanceOf(AggregateError)
+		expect((error.errors[0] as DowelError).code).toBe('DISPOSED')
+		expect((error.errors[1] as Error).message).toBe('cleanup failed')
+	})
+
 	test('declared inputs must cover what the entry needs', async () => {
 		const Other = slot('Other', { scope: JobScope })<number>()
 		const Needy = service('Needy', { input: JobInput, other: Other }, (d) => d)

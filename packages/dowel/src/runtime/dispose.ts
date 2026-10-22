@@ -42,13 +42,15 @@ export async function disposeRecords(
  * one after another), then the initializations still in flight, then its
  * own instances. The store is marked disposed before anything runs, so
  * nothing new can be resolved from it meanwhile and instances that finish
- * initializing dispose themselves (and are waited for). It is cleared
- * whatever happens; every failure is collected and thrown together.
+ * initializing dispose themselves (and are waited for). Every run and
+ * starting factory beneath it is aborted before any is waited for, so work
+ * that waits on other work all hears of the disposal. It is cleared whatever
+ * happens; every failure is collected and thrown together.
  */
 export async function disposeStore(store: Store, what: string): Promise<void> {
 	store.disposed = true
-	// Tell factories still running to give up; disposal waits for them below.
-	cancelStarting(store)
+	// Tell factories and runs still going to give up; disposal waits for them below.
+	cancelStore(store)
 	const failures: unknown[] = []
 	try {
 		await disposeChildren(store)
@@ -116,6 +118,16 @@ export function cancellation(message: string): DowelError {
 
 export function isCancellation(error: unknown): boolean {
 	return typeof error === 'object' && error !== null && cancellations.has(error)
+}
+
+/**
+ * Aborts every run and starting factory at and beneath a store, without
+ * waiting for anything, so the order does not matter. One opened while it
+ * cancels is reached too.
+ */
+export function cancelStore(store: Store): void {
+	cancelStarting(store)
+	for (const child of store.children) child.cancel()
 }
 
 /** Disposes what a store owns, newest first, one after another, collecting failures. */
