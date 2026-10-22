@@ -4,13 +4,19 @@
  * commit.
  */
 
-import type { CachedPlan, Compiled, ExecutionPlan, Plan } from '../compile/plan.ts'
+import {
+	type CachedPlan,
+	type Compiled,
+	type ExecutionPlan,
+	isCached,
+	type Plan,
+} from '../compile/plan.ts'
 import { withCleanup } from '../errors.ts'
 import { ROOT } from '../nodes/node.ts'
 import { disposeStore } from '../runtime/dispose.ts'
 import { compileWithHooks, type HotAccess } from '../runtime/hooks.ts'
 import { initialize } from '../runtime/resolve.ts'
-import { type Chain, type InstanceRecord, newStore, type Store } from '../runtime/store.ts'
+import { type Chain, type InstanceRecord, newStore, type Store, UNSET } from '../runtime/store.ts'
 
 /** A committed replacement: `teardown` disposes what it replaced. */
 export interface Committed {
@@ -29,23 +35,43 @@ export async function replaceGeneration(access: HotAccess): Promise<Committed> {
 	// Carry unchanged instances into the proposal's store; the rest will be replaced.
 	const rootPlan = next.scopes.get(ROOT.name)!
 	const nextByKey = new Map<string, CachedPlan>()
-	for (const plan of rootPlan.needs.order) nextByKey.set(planKey(plan), plan)
+	// Instances created on demand are carried too, so a run does not create them again.
+	for (const plan of rootPlan.cached) nextByKey.set(planKey(plan), plan)
 	const oldRoot = access.root
 	const root = newStore(ROOT, rootPlan.cells, oldRoot.owned)
 	// Carried records are shared by both stores until the commit re-points them at their new plan.
 	const carried = new Map<InstanceRecord, CachedPlan>()
-	for (const record of oldRoot.records) {
-		const plan = nextByKey.get(planKey(record.plan))
-		if (plan !== undefined && isUnchanged(plan)) {
-			root.cells[plan.cell] = oldRoot.cells[record.plan.cell]
-			root.records.push(record)
-			carried.set(record, plan)
+	const carriedPlans = new Set<Plan>()
+	// Records come in creation order, so an instance's dependencies were considered before it.
+	const carriable = (plan: CachedPlan): boolean =>
+		isUnchanged(plan) &&
+		// The proposal may have created one itself meanwhile, or be creating it.
+		root.cells[plan.cell] === UNSET &&
+		root.pending?.[plan.cell] === undefined &&
+		// One the proposal created anew must not be left holding the instance it replaces.
+		plan.deps.every((dep) => !isCached(dep.plan) || carriedPlans.has(dep.plan))
+	let seen = 0
+	const carryNew = (): void => {
+		for (; seen < oldRoot.records.length; seen++) {
+			const record = oldRoot.records[seen]!
+			const plan = nextByKey.get(planKey(record.plan))
+			if (plan !== undefined && carriable(plan)) {
+				root.cells[plan.cell] = oldRoot.cells[record.plan.cell]
+				root.records.push(record)
+				carried.set(record, plan)
+				carriedPlans.add(plan)
+			}
 		}
 	}
+	carryNew()
 
 	// Discarding the proposal disposes only what it created, containers opened meanwhile included.
 	const discard = () => disposeWithout(root, carried, 'a discarded replacement')
 	await withCleanup(() => initialize(rootPlan.needs.order, [root]), discard)
+	// Runs may have created instances on demand in the old root while the proposal initialized,
+	// or be creating them; those are waited for, so that they are carried and not created twice.
+	if (oldRoot.pending !== null) await Promise.allSettled(oldRoot.pending)
+	carryNew()
 	// The container was disposed meanwhile, carried instances included: there is nothing to commit to.
 	if (oldRoot.disposed) return { teardown: discard() }
 

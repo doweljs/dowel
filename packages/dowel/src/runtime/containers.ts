@@ -7,7 +7,7 @@
 
 import type { Container, NodeInfo } from '../api.ts'
 import type { Composition } from '../compile/compile.ts'
-import { type Compiled, emptyScopePlan, type Plan } from '../compile/plan.ts'
+import { type Compiled, emptyScopePlan, isCached, type Plan } from '../compile/plan.ts'
 import { DowelError, withCleanup } from '../errors.ts'
 import type { ScopeMeta } from '../model/declarations.ts'
 import type { ContainerState } from '../model/state.ts'
@@ -57,6 +57,13 @@ abstract class ContainerBase {
 		// Plans and stores share canonical scope nodes, so identity is exact here.
 		if (this.chain[plan.scope.depth]?.scope !== plan.scope) {
 			notVisible(plan.name, plan.scope, this.store.scope)
+		}
+		// Values and runners need nothing created, so only services must have been created with the container.
+		if (isCached(plan) && !this.compiled.eager.has(plan)) {
+			throw new DowelError(
+				'CREATED_ON_DEMAND',
+				`'${plan.name}' is reached only through an execution, so runs create it when they need it and get() cannot return it. Provide it to create it with the container.`,
+			)
 		}
 		return resolve(plan, this.chain)
 	}

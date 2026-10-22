@@ -7,6 +7,8 @@ export type DowelErrorCode =
 	| 'INVALID_SCOPE'
 	/** `get()` was called with a node the container cannot reach. */
 	| 'NOT_PROVIDED'
+	/** `get()` was called with a service only an execution reaches, which runs create on demand. */
+	| 'CREATED_ON_DEMAND'
 	/** A node was resolved from a container that cannot see it. */
 	| 'SCOPE_REQUIRED'
 	/**

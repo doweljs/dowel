@@ -62,11 +62,12 @@ export function resolve(plan: Plan, chain: Chain): unknown {
 }
 
 /**
- * Initializes a scope's cached plans in dependency order. Independent async
- * factories start concurrently. The first failure, synchronous or not, stops
- * what has not started and aborts the signals of what is still running; once
- * everything started has settled, it is thrown with what later failures add,
- * and the caller disposes what was created.
+ * Initializes a scope's cached plans in dependency order, and what they reach
+ * above it that nothing created yet. Independent async factories start
+ * concurrently. The first failure, synchronous or not, stops what has not
+ * started and aborts the signals of what is still running; once everything
+ * started has settled, it is thrown with what later failures add, and the
+ * caller disposes what was created.
  */
 export async function initialize(order: readonly CachedPlan[], chain: Chain): Promise<void> {
 	const store = chain[chain.length - 1]!
@@ -80,7 +81,7 @@ export async function initialize(order: readonly CachedPlan[], chain: Chain): Pr
 		try {
 			const result = init(plan, chain)
 			if (isPromiseLike(result)) {
-				const promise = Promise.resolve(result)
+				const promise = joined(Promise.resolve(result), plan, store)
 				promise.then(undefined, fail)
 				started.push(promise)
 			}
@@ -91,6 +92,26 @@ export async function initialize(order: readonly CachedPlan[], chain: Chain): Pr
 	}
 	await Promise.allSettled(started)
 	if (failures.length > 0) throw initializationError(failures)
+}
+
+/**
+ * What `waiter`'s store waits for while `plan` is created. A store above
+ * shares what it creates, so a waiter that stops starting services stops
+ * waiting for it instead of cancelling it, and leaves it to the store that
+ * owns it.
+ */
+function joined<T>(promise: Promise<T>, plan: CachedPlan, waiter: Store): Promise<T> {
+	if (plan.scope === waiter.scope) return promise
+	const reason = (): unknown =>
+		cancellation(
+			`Scope '${waiter.scope.name}' stopped starting services, so it no longer waits for '${plan.name}' in scope '${plan.scope.name}'.`,
+		)
+	if (waiter.cancelled) return Promise.reject(reason())
+	return new Promise<T>((resolve, reject) => {
+		const stop = (): void => reject(reason())
+		waiter.onStop.add(stop)
+		promise.then(resolve, reject).finally(() => waiter.onStop.delete(stop))
+	})
 }
 
 /**
@@ -118,20 +139,25 @@ export interface OpenedStore extends Child {
 	readonly chain: Chain
 }
 
+/** How the owner of an opened store takes part in opening and disposing it. */
+export interface OpenOptions {
+	/** Runs when disposal of the store or an owner starts. */
+	readonly onCancel?: () => void
+	/** Runs before the store's instances are disposed. */
+	readonly beforeDisposal?: () => Promise<void>
+}
+
 /**
  * Opens a store at `scopePlan` under the last store of `chain`: supplies the
  * bindings, registers it with its parent and initializes what `needs` lists.
- * `onCancel` runs when disposal of it or an owner starts, and `beforeDisposal`
- * before its instances are disposed. On failure the store is disposed before
- * the promise rejects.
+ * On failure the store is disposed before the promise rejects.
  */
 export async function openStore(
 	chain: Chain,
 	scopePlan: ScopePlan,
 	bindings: readonly BindingNode[],
 	needs: ScopeNeeds,
-	onCancel?: () => void,
-	beforeDisposal?: () => Promise<void>,
+	{ onCancel, beforeDisposal }: OpenOptions = {},
 ): Promise<OpenedStore> {
 	// A store being disposed may already have disposed its children, so nothing may open under it.
 	if (chain.some((store) => store.disposed)) {
@@ -214,26 +240,35 @@ function init(plan: CachedPlan, chain: Chain): unknown {
 		controller: null,
 	}
 	store.starting.add(record)
-	// Dependencies at the same scope may still be initializing (async) and are joined; any
-	// other value, a bound promise included, reaches the factory as it is.
+	// Cached dependencies are created if nothing did yet, here or in a store above (on
+	// demand), and joined while they initialize; any other value, a bound promise included,
+	// reaches the factory as it is.
 	const values = new Array<unknown>(plan.deps.length)
 	const waiting: Promise<void>[] = []
-	for (let i = 0; i < plan.deps.length; i++) {
-		const dep = plan.deps[i]!.plan
-		if (!isCached(dep) || dep.scope !== plan.scope) {
-			values[i] = resolve(dep, chain)
-			continue
+	try {
+		for (let i = 0; i < plan.deps.length; i++) {
+			const dep = plan.deps[i]!.plan
+			if (!isCached(dep)) {
+				values[i] = resolve(dep, chain)
+				continue
+			}
+			const value = init(dep, chain)
+			if (isPromiseLike(value)) {
+				waiting.push(
+					joined(Promise.resolve(value), dep, store).then((ready) => {
+						values[i] = ready
+					}),
+				)
+			} else {
+				values[i] = value
+			}
 		}
-		const value = init(dep, chain)
-		if (isPromiseLike(value)) {
-			waiting.push(
-				Promise.resolve(value).then((ready) => {
-					values[i] = ready
-				}),
-			)
-		} else {
-			values[i] = value
-		}
+	} catch (error) {
+		// A dependency failed synchronously, so the factory never runs: nothing waits for what
+		// was joined already, whose failures must not go unhandled.
+		for (const promise of waiting) promise.catch(noop)
+		abandon(store, record)
+		throw error
 	}
 
 	const create = (): unknown => {
@@ -362,19 +397,15 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 	let phase: 'opening' | Promise<void> | 'settled' = 'opening'
 	const notStarted = (): DowelError =>
 		cancellation(`Execution '${name}' was disposed before its body started.`)
-	const opened = await openStore(
-		base,
-		plan.child,
-		bindings,
-		plan.needs,
-		() => {
+	const opened = await openStore(base, plan.child, bindings, plan.needs, {
+		onCancel: () => {
 			if (phase !== 'settled')
 				controller.abort(cancellation(`Execution '${name}' is being disposed.`))
 		},
-		async () => {
+		beforeDisposal: async () => {
 			if (typeof phase === 'object') await phase
 		},
-	).catch((error: unknown) => {
+	}).catch((error: unknown) => {
 		// Disposal stopped the opening: the run reports that, with what else failed.
 		const [first, ...others] = errorsOf(error)
 		if (!isCancellation(first)) throw error

@@ -52,6 +52,8 @@ export interface Store {
 	 * never runs.
 	 */
 	cancelled: boolean
+	/** Called once it stops starting factories, so what waits on a store above stops waiting. */
+	readonly onStop: Set<() => void>
 	/** Instantiated cached nodes in creation order. */
 	readonly records: InstanceRecord[]
 	/** Scopes and executions opened from this store, disposed before it. */
@@ -71,6 +73,7 @@ export function newStore(scope: ScopeNode, size: number, owned: WeakSet<object>)
 		pending: null,
 		starting: new Set(),
 		cancelled: false,
+		onStop: new Set(),
 		records: [],
 		children: new Set(),
 		owned,

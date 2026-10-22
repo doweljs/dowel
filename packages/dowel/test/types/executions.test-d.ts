@@ -4,17 +4,19 @@
  */
 import { expectTypeOf } from 'bun:test'
 import {
+	type CreatedOnDemand,
 	container,
 	execution,
 	type IncompleteExecutions,
 	type Infer,
+	type NotVisible,
 	type RunContext,
 	scope,
 	service,
 	slot,
 } from '../../src/index.ts'
 import type { MetaOf } from '../../src/model/infer.ts'
-import { Logger, Request, test } from './support.ts'
+import { Logger, PerRequest, Request, test } from './support.ts'
 
 test('executions', () => {
 	const JobScope = scope('job')
@@ -158,4 +160,45 @@ test('conditionally present execution inputs preserve the graph and runner types
 	>()
 	const annotated = await container().provide(Annotated).build()
 	expectTypeOf(annotated.get(Annotated)({}, (entry) => entry)).toEqualTypeOf<Promise<number>>()
+})
+
+test('get() accepts what the container creates, not what only an execution reaches', async () => {
+	const JobScope = scope('job')
+	const Mailer = service('Mailer', () => ({ send: (to: string) => to }))
+	const Send = execution('Send', { scope: JobScope, entry: Mailer })
+	const Api = service('Api', { send: Send }, ({ send }) => send)
+	const app = await container().provide(Api).build()
+	expectTypeOf(app.get(Send)).toEqualTypeOf<Infer<typeof Send>>()
+	// @ts-expect-error: only Send reaches it, so runs create it
+	app.get(Mailer)
+	expectTypeOf<Parameters<typeof app.get<typeof Mailer>>[0]>().toEqualTypeOf<
+		CreatedOnDemand<'Mailer'>
+	>()
+
+	// Provided, it is created with the container.
+	const both = await container().provide(Api, Mailer).build()
+	expectTypeOf(both.get(Mailer).send).toEqualTypeOf<(to: string) => string>()
+})
+
+test('get() still accepts values only an execution reaches', async () => {
+	const JobScope = scope('job')
+	const Config = slot('Config')<{ url: string }>()
+	const Uses = service('Uses', { config: Config }, ({ config }) => config)
+	const Run = execution('Run', { scope: JobScope, entry: Uses })
+	const Api = service('Api', { run: Run }, ({ run }) => run)
+	const app = await container().provide(Api).bind(Config, { url: 'x' }).build()
+	expectTypeOf(app.get(Config)).toEqualTypeOf<{ url: string }>()
+	// @ts-expect-error: a service, which runs create
+	app.get(Uses)
+})
+
+test('get() reports visibility before on-demand creation', async () => {
+	const Task = scope('task', PerRequest)
+	const Audit = service('Audit', { request: Request }, ({ request }) => request.url)
+	const Record = execution('Record', { scope: Task, entry: Audit })
+	const Handler = service('Handler', { request: Request, record: Record }, () => ({}))
+	const app = await container().provide(Handler).build()
+	expectTypeOf<Parameters<typeof app.get<typeof Audit>>[0]>().toEqualTypeOf<
+		NotVisible<'Audit', 'request'>
+	>()
 })
