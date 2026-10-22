@@ -366,4 +366,31 @@ describe('executions across replacements', () => {
 		expect(disposed).toEqual([2])
 		expect(await app.get(Api)()).toBe(1)
 	})
+
+	test('an update does not wait for an obsolete creation, which only its teardown aborts', async () => {
+		const Job = scope('job')
+		const starting = gate()
+		// Settles only once aborted, which happens when the replaced generation is torn down.
+		const Conn = service('Conn', async (ctx) => {
+			starting.open()
+			await new Promise((resolve) => ctx.signal.addEventListener('abort', resolve))
+			return 'old'
+		})
+		const Query = execution('Query', { scope: Job, entry: Conn })
+		const Api = service(
+			'Api',
+			{ query: Query },
+			({ query }) =>
+				() =>
+					query((conn) => conn),
+		)
+		await update('conn.ts', { Job, Conn, Query, Api })
+		const app = await container().provide(Api).build()
+		const stale = app.get(Api)()
+		stale.catch(() => {})
+		await starting.promise
+		await update('conn.ts', { Job, Conn: service('Conn', () => 'new'), Query, Api })
+		expect(await app.get(Api)()).toBe('new')
+		await expect(stale).rejects.toThrow(/disposed/)
+	})
 })

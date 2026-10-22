@@ -119,7 +119,7 @@ const app = await container()
 	.build()
 ```
 
-What you `provide()` are the container's roots. Everything they reach is created at `build()`, and nothing else is. A binding alone activates nothing: `bind(Cache, RedisCache)` only takes effect once something reachable depends on `Cache`, or `Cache` itself is provided.
+What you `provide()` are the container's roots. What they reach outside an execution is created at `build()`; what only an execution reaches is created by the first run that needs it (see [Executions](#executions)), and nothing else is created at all. A binding alone activates nothing: `bind(Cache, RedisCache)` only takes effect once something reachable depends on `Cache`, or `Cache` itself is provided.
 
 If a factory fails, `build()` disposes what it already created, then rejects. Failures during that cleanup are attached to the original error as an `AggregateError`.
 
@@ -155,7 +155,7 @@ request.get(Users) // root-scope services are shared
 
 **Always dispose what `open()` returns**, with `await using` or in a `finally`. A container keeps every container opened from it until they are disposed, so that disposing the app can still close them. One dropped without being disposed stays in memory, with everything it created, until its parent is disposed.
 
-What the provided nodes reach in a scope is created when its container opens, not when first resolved; that is what keeps `get()` synchronous. Keep factories in short-lived scopes cheap, and free of side effects a request may not need. What only an execution reaches is created by the first run that needs it (see [Executions](#executions)).
+What the provided nodes reach in a scope, outside an execution, is created when its container opens, not when first resolved; that is what keeps `get()` synchronous. Keep factories in short-lived scopes cheap, and free of side effects a request may not need. What only an execution reaches is created by the first run that needs it (see [Executions](#executions)).
 
 Scopes nest. Declare them as values, give slots a scope, and open containers one scope at a time:
 

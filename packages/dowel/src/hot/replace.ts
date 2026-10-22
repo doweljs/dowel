@@ -43,13 +43,13 @@ export async function replaceGeneration(access: HotAccess): Promise<Committed> {
 	const carried = new Map<InstanceRecord, CachedPlan>()
 	const carriedPlans = new Set<Plan>()
 	// Records come in creation order, so an instance's dependencies were considered before it.
-	const carriable = (plan: CachedPlan): boolean =>
+	const carriable = (plan: CachedPlan, depsCarried = true): boolean =>
 		isUnchanged(plan) &&
 		// The proposal may have created one itself meanwhile, or be creating it.
 		root.cells[plan.cell] === UNSET &&
 		root.pending?.[plan.cell] === undefined &&
 		// One the proposal created anew must not be left holding the instance it replaces.
-		plan.deps.every((dep) => !isCached(dep.plan) || carriedPlans.has(dep.plan))
+		(!depsCarried || plan.deps.every((dep) => !isCached(dep.plan) || carriedPlans.has(dep.plan)))
 	let seen = 0
 	const carryNew = (): void => {
 		for (; seen < oldRoot.records.length; seen++) {
@@ -69,8 +69,9 @@ export async function replaceGeneration(access: HotAccess): Promise<Committed> {
 	const discard = () => disposeWithout(root, carried, 'a discarded replacement')
 	await withCleanup(() => initialize(rootPlan.needs.order, [root]), discard)
 	// Runs may have created instances on demand in the old root while the proposal initialized,
-	// or be creating them; those are waited for, so that they are carried and not created twice.
-	if (oldRoot.pending !== null) await Promise.allSettled(oldRoot.pending)
+	// or be creating them. Those it would carry are waited for, so that they are not created
+	// twice; obsolete ones are not, since only the teardown after the commit aborts them.
+	await Promise.allSettled(carriablePending(access.compiled, oldRoot, nextByKey, carriable))
 	carryNew()
 	// The container was disposed meanwhile, carried instances included: there is nothing to commit to.
 	if (oldRoot.disposed) return { teardown: discard() }
@@ -80,6 +81,28 @@ export async function replaceGeneration(access: HotAccess): Promise<Committed> {
 	for (const [record, plan] of carried) record.plan = plan
 	successors.set(oldRoot, { store: root, plans: next.plans })
 	return { teardown: disposeWithout(oldRoot, carried, 'replaced services') }
+}
+
+/**
+ * Creations still in flight in the committed root whose instances the
+ * proposal would carry. Whether their dependencies are carried is judged once
+ * those settle too.
+ */
+function carriablePending(
+	committed: Compiled,
+	oldRoot: Store,
+	nextByKey: ReadonlyMap<string, CachedPlan>,
+	carriable: (plan: CachedPlan, depsCarried?: boolean) => boolean,
+): Promise<unknown>[] {
+	const { pending } = oldRoot
+	if (pending === null) return []
+	const waiting: Promise<unknown>[] = []
+	for (const old of committed.scopes.get(ROOT.name)!.cached) {
+		const promise = pending[old.cell]
+		const plan = nextByKey.get(planKey(old))
+		if (promise !== undefined && plan !== undefined && carriable(plan, false)) waiting.push(promise)
+	}
+	return waiting
 }
 
 /** Whether a plan of `next` stands for the same declarations as in `committed`, its dependencies included. */
