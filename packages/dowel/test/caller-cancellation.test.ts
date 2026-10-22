@@ -327,6 +327,20 @@ describe('caller cancellation', () => {
 		expect(await run).toBe(reason)
 	})
 
+	test('a polyfill that aborts without a reason rejects with an AbortError, not undefined', async () => {
+		const { opened, TaskJob } = fixture()
+		opened.open()
+		const app = await container().provide(TaskJob).build()
+		const polyfill = Object.assign(new EventTarget(), { aborted: true })
+		const error = await app
+			.get(TaskJob)({ id: 'a' }, () => {}, { signal: untyped(polyfill) })
+			.then(
+				() => null,
+				(failure: unknown) => failure,
+			)
+		expect((error as Error).name).toBe('AbortError')
+	})
+
 	test('options must carry an AbortSignal', async () => {
 		const { opened, TaskJob } = fixture()
 		opened.open()

@@ -10,6 +10,8 @@ import type { ScopeNode } from '../nodes/node.ts'
 
 export const UNSET: unique symbol = Symbol('dowel.unset')
 
+export const noop = (): void => {}
+
 /** Releases a resource, or runs a deferred callback. */
 export type Disposer = () => void | PromiseLike<void>
 
@@ -53,10 +55,13 @@ export interface Store {
 	 * waits on a store above stops waiting. See `cancel.ts`.
 	 */
 	cancelled: boolean
-	/** Why it was cancelled; `undefined` until then. */
-	reason: unknown
+	/**
+	 * Why it was cancelled, made when first asked, since most cancellations,
+	 * such as a run finishing, are never observed; `null` until then.
+	 */
+	why: (() => unknown) | null
 	/** Called once it is cancelled; allocated when something first listens. */
-	cancelListeners: ((reason: unknown) => void)[] | null
+	cancelListeners: ((why: () => unknown) => void)[] | null
 	/** Instantiated cached nodes in creation order. */
 	readonly records: InstanceRecord[]
 	/** Scopes and executions opened from this store, disposed before it. */
@@ -82,7 +87,7 @@ export function newStore(
 		pending: null,
 		starting: new Set(),
 		cancelled: parent?.cancelled ?? false,
-		reason: parent?.reason,
+		why: parent?.why ?? null,
 		cancelListeners: null,
 		records: [],
 		children: new Set(),

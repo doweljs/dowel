@@ -403,6 +403,47 @@ describe('executions', () => {
 		expect((error.errors[1] as Error).message).toBe('cleanup failed')
 	})
 
+	test("a body's signal names its run, with its own reason each time the run is disposed", async () => {
+		const reasons: unknown[] = []
+		for (let i = 0; i < 2; i++) {
+			const app = await container().provide(Job).build()
+			const started = gate()
+			const running = app.get(Job)({ input: { id: 'x' } }, async (_runner, { signal }) => {
+				started.open()
+				await new Promise((resolve) => signal.addEventListener('abort', resolve))
+				reasons.push(signal.reason)
+			})
+			await started.promise
+			await app.dispose()
+			await running
+		}
+		const [first, second] = reasons as Error[]
+		expect(first!.message).toBe("Execution 'Job' is being disposed.")
+		expect((first!.cause as Error).message).toBe("Scope 'root' is being disposed.")
+		// One disposal's error is not another's, so neither carries the other's stack or tags.
+		expect(second).not.toBe(first)
+		expect(second!.cause).not.toBe(first!.cause)
+	})
+
+	test("a run stopped by a sibling's failure says so, not that it was disposed", async () => {
+		const Task = scope('siblingTask')
+		const Noop = service('Noop', () => 0)
+		const Work = execution('Work', { scope: Task, entry: Noop })
+		let stopped: unknown
+		const Starter = service('Starter', { work: Work }, async ({ work }) => {
+			await work(() => 'ran').catch((error: unknown) => {
+				stopped = error
+			})
+		})
+		const Broken = service('Broken', () => {
+			throw new Error('misconfigured')
+		})
+		await expect(container().provide(Starter, Broken).build()).rejects.toThrow('misconfigured')
+		expect((stopped as Error).message).toBe(
+			"Execution 'Work' did not start: Scope 'root' stopped starting services after one failed.",
+		)
+	})
+
 	test('declared inputs must cover what the entry needs', async () => {
 		const Other = slot('Other', { scope: JobScope })<number>()
 		const Needy = service('Needy', { input: JobInput, other: Other }, (d) => d)

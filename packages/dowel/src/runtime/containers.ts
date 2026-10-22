@@ -8,17 +8,17 @@
 import type { Container, NodeInfo } from '../api.ts'
 import type { Composition } from '../compile/compile.ts'
 import { type Compiled, emptyScopePlan, isCached, type Plan } from '../compile/plan.ts'
-import { DowelError, withCleanup } from '../errors.ts'
+import { DowelError, errorsOf, withCleanup, withCleanupFailures } from '../errors.ts'
 import type { ScopeMeta } from '../model/declarations.ts'
 import type { ContainerState } from '../model/state.ts'
 import { bindingNode, declaredNode, scopeNode } from '../nodes/coerce.ts'
 import { sameLineage, scopeNames } from '../nodes/lineage.ts'
 import { type BindingNode, ROOT, type ScopeNode } from '../nodes/node.ts'
-import { disposeStore } from './dispose.ts'
+import { cancellation, cancelledBy, disposeStore } from './dispose.ts'
 import { type HotAccess, hooks, hotAccess } from './hooks.ts'
 import { inspect } from './inspect.ts'
 import { initialize, type OpenedStore, openStore, resolve } from './resolve.ts'
-import { type Chain, newStore, notVisible, type Store } from './store.ts'
+import { type Chain, newStore, noop, notVisible, type Store } from './store.ts'
 
 function lookup(compiled: Compiled, node: unknown): Plan {
 	const target = declaredNode(node, 'the node to resolve')
@@ -81,7 +81,19 @@ abstract class ContainerBase {
 			)
 		}
 		const scopePlan = this.compiled.scopes.get(scope.name) ?? emptyScopePlan(scope)
-		const opened = await openStore(this.chain, scopePlan, bindings, scopePlan.needs)
+		const opened = await openStore(this.chain, scopePlan, bindings, scopePlan.needs).catch(
+			(error: unknown) => {
+				// Disposal stopped the opening: reported as such, with what else failed.
+				const [first, ...others] = errorsOf(error)
+				const by = cancelledBy(first)
+				if (by === undefined) throw error
+				throw withCleanupFailures(
+					cancellation(`Scope '${scope.name}' was disposed while it opened.`, by, { cause: first }),
+					others,
+					`Opening scope '${scope.name}'`,
+				)
+			},
+		)
 		return new ChildContainer(this.compiled, opened)
 	}
 
@@ -177,8 +189,6 @@ export class RootContainer extends ContainerBase implements Container {
 		}
 	}
 }
-
-const noop = (): void => {}
 
 class ChildContainer extends ContainerBase implements Container<ContainerState, ScopeMeta> {
 	protected readonly what = 'the opened container'

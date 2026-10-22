@@ -1,7 +1,6 @@
 /** Disposal of instances and stores, shared by the runtime and hot replacement. */
 
 import { DowelError, errorsOf } from '../errors.ts'
-import type { ScopeNode } from '../nodes/node.ts'
 import { cancelStore } from './cancel.ts'
 import { clearStore, type InstanceRecord, type Store } from './store.ts'
 
@@ -52,7 +51,7 @@ export async function disposeRecords(
 export async function disposeStore(store: Store, what: string): Promise<void> {
 	store.disposed = true
 	// Tell factories and runs still going beneath it to give up; disposal waits for them below.
-	cancelStore(store, disposing(store.scope))
+	cancelStore(store, () => cancellation(`Scope '${store.scope.name}' is being disposed.`))
 	const failures: unknown[] = []
 	try {
 		await disposeChildren(store)
@@ -84,7 +83,7 @@ export function signalOf(record: InstanceRecord, store: Store): AbortSignal {
 		record.controller = new AbortController()
 		// Created late: what it reports may have happened already.
 		if (record.disposed) abortSignal(record)
-		else if (store.cancelled && store.starting.has(record)) record.controller.abort(store.reason)
+		else if (store.cancelled && store.starting.has(record)) record.controller.abort(store.why!())
 	}
 	return record.controller.signal
 }
@@ -93,37 +92,36 @@ function abortSignal(record: InstanceRecord): void {
 	record.controller?.abort(cancellation(`Service '${record.plan.name}' is being disposed.`))
 }
 
-const cancellations = new WeakSet<object>()
+/** What a cancellation reports: a disposal, or a failure while the store it names initialized. */
+export type Cancelled =
+	| { readonly kind: 'disposal' }
+	| { readonly kind: 'failure'; readonly store: Store }
+
+const disposal: Cancelled = { kind: 'disposal' }
+const cancellations = new WeakMap<object, Cancelled>()
 
 /**
  * An error that only reports a cancellation, such as the reason a signal
  * aborts with. Reported after the failure or disposal that caused it, it
  * adds nothing.
  */
-export function cancellation(message: string): DowelError {
-	const error = new DowelError('DISPOSED', message)
-	cancellations.add(error)
+export function cancellation(
+	message: string,
+	cancelled: Cancelled = disposal,
+	options?: ErrorOptions,
+): DowelError {
+	const error = new DowelError('DISPOSED', message, options)
+	cancellations.set(error, cancelled)
 	return error
 }
 
-const disposals = new WeakMap<ScopeNode, DowelError>()
-
-/**
- * Why what runs in a scope is cancelled when a store of it is disposed. Made
- * once per scope, since every run of a scope is disposed when it finishes,
- * and a new error each time would cost more than the run.
- */
-export function disposing(scope: ScopeNode): DowelError {
-	let reason = disposals.get(scope)
-	if (reason === undefined) {
-		reason = cancellation(`Scope '${scope.name}' is being disposed.`)
-		disposals.set(scope, reason)
-	}
-	return reason
+/** What a cancellation reports, or `undefined` for any other error. */
+export function cancelledBy(error: unknown): Cancelled | undefined {
+	return typeof error === 'object' && error !== null ? cancellations.get(error) : undefined
 }
 
 export function isCancellation(error: unknown): boolean {
-	return typeof error === 'object' && error !== null && cancellations.has(error)
+	return cancelledBy(error) !== undefined
 }
 
 /** Disposes what a store owns, newest first, one after another, collecting failures. */
