@@ -46,6 +46,12 @@ export interface Store {
 	readonly cells: unknown[]
 	/** In-flight initializations, by cell. Allocated on first async init. */
 	pending: (Promise<unknown> | undefined)[] | null
+	/**
+	 * Creations of a replaced generation still in flight, by cell: one here
+	 * waits for its predecessor to settle first, so the two never run at once.
+	 * Set by hot replacement.
+	 */
+	predecessors: (Promise<unknown> | undefined)[] | null
 	/** Instances whose factory has not settled yet; their signals abort when the store is cancelled. */
 	readonly starting: Set<InstanceRecord>
 	/**
@@ -85,6 +91,7 @@ export function newStore(
 		scope,
 		cells: new Array(size).fill(UNSET),
 		pending: null,
+		predecessors: null,
 		starting: new Set(),
 		cancelled: parent?.cancelled ?? false,
 		why: parent?.why ?? null,

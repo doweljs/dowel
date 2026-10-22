@@ -279,15 +279,20 @@ describe('executions across replacements', () => {
 		expect(current).not.toBe(old)
 	})
 
-	test('an update waits for what a run is still creating on demand, and carries it', async () => {
+	test('an update commits while a run is still creating on demand, and the new generation creates its own only once that settled', async () => {
 		const Job = scope('job')
 		let created = 0
+		let active = 0
+		let mostActive = 0
 		const starting = gate()
 		const ready = gate()
 		const Mailer = service('Mailer', async () => {
 			const id = ++created
+			mostActive = Math.max(mostActive, ++active)
 			starting.open()
-			await ready.promise
+			// Only the replaced generation's creation is held.
+			if (id === 1) await ready.promise
+			active--
 			return { id }
 		})
 		const Send = execution('Send', { scope: Job, entry: Mailer })
@@ -303,19 +308,20 @@ describe('executions across replacements', () => {
 		await update('other.ts', { Other })
 		const app = await container().provide(Api, Other).build()
 		const first = app.get(Api)()
+		first.catch(() => {})
 		await starting.promise
+		// The update commits without waiting for the old generation's creation; its own promise
+		// waits for the teardown, which waits for that creation.
 		const updating = update('other.ts', { Other: service('Other', () => 2) })
+		await until(() => app.get(Other) === 2)
+		const next = app.get(Api)()
 		await new Promise((resolve) => setTimeout(resolve, 0))
-		ready.open()
-		await updating
-		// The run belongs to the replaced generation, whose teardown may dispose it before its body.
-		const outcome: unknown = await first.then(
-			(id) => id,
-			(error: { code?: string }) => error.code,
-		)
-		expect<unknown[]>([1, 'DISPOSED']).toContain(outcome)
-		expect(await app.get(Api)()).toBe(1)
 		expect(created).toBe(1)
+		ready.open()
+		expect(await next).toBe(2)
+		await updating
+		// The two creations never ran at once.
+		expect(mostActive).toBe(1)
 	})
 
 	test('an instance the proposal is still creating is not also carried over', async () => {
@@ -367,10 +373,10 @@ describe('executions across replacements', () => {
 		expect(await app.get(Api)()).toBe(1)
 	})
 
-	test('an update does not wait for an obsolete creation, which only its teardown aborts', async () => {
+	test('an update does not wait for an obsolete creation still in flight', async () => {
 		const Job = scope('job')
 		const starting = gate()
-		// Settles only once aborted, which happens when the replaced generation is torn down.
+		// Settles only once aborted.
 		const Conn = service('Conn', async (ctx) => {
 			starting.open()
 			await new Promise((resolve) => ctx.signal.addEventListener('abort', resolve))
@@ -394,6 +400,15 @@ describe('executions across replacements', () => {
 		await expect(stale).rejects.toThrow(/disposed/)
 	})
 
+	/** Resolves once `check` holds, checking after each task, or fails after a while. */
+	async function until(check: () => boolean): Promise<void> {
+		for (let attempt = 0; attempt < 100; attempt++) {
+			if (check()) return
+			await new Promise((resolve) => setTimeout(resolve, 0))
+		}
+		throw new Error('The condition never held.')
+	}
+
 	/** A factory that settles only once aborted, the first time; later creations are immediate. */
 	function stubbornFirst(value: string) {
 		let created = 0
@@ -408,7 +423,7 @@ describe('executions across replacements', () => {
 		return { factory, starting: starting.promise, created: () => created }
 	}
 
-	test('an update does not wait for a carried creation blocked on an obsolete one through a runner', async () => {
+	test('an update does not wait for a creation blocked on an obsolete one through a runner', async () => {
 		const Job = scope('job')
 		const conn = stubbornFirst('old conn')
 		const Conn = service('Conn', (ctx) => conn.factory(ctx))
@@ -433,9 +448,9 @@ describe('executions across replacements', () => {
 		first.catch(() => {})
 		await conn.starting
 		await update('conn.ts', { Job, Conn: service('Conn', () => 'new conn'), Query })
+		// Still being created when the update committed, it is created again, against the new Conn.
 		const warm = await app.get(Api)()
-		// The obsolete creation was aborted and finished, so the carried service finished warming up.
-		expect(warm.warmed).toBe('old conn')
+		expect(warm.warmed).toBe('new conn')
 		expect(await warm.query((value) => value)).toBe('new conn')
 	})
 
@@ -466,15 +481,19 @@ describe('executions across replacements', () => {
 		expect(config.created()).toBe(2)
 	})
 
-	test('an update aborts an obsolete creation and still carries a carriable one in flight with it', async () => {
+	test('an update waits for neither an obsolete nor an unchanged creation in flight, and creates each again once it settled', async () => {
 		const Job = scope('job')
 		let mailers = 0
+		let active = 0
+		let mostActive = 0
 		const mailerStarting = gate()
 		const mailerReady = gate()
 		const Mailer = service('Mailer', async () => {
 			const id = ++mailers
+			mostActive = Math.max(mostActive, ++active)
 			mailerStarting.open()
-			await mailerReady.promise
+			if (id === 1) await mailerReady.promise
+			active--
 			return { id }
 		})
 		const conn = stubbornFirst('old conn')
@@ -485,21 +504,28 @@ describe('executions across replacements', () => {
 			send: () => send((mailer) => mailer.id),
 			query: () => query((value) => value),
 		}))
+		const Version = service('Version', () => 1)
 		await update('mail.ts', { Job, Mailer, Send })
-		await update('conn.ts', { Conn, Query })
+		await update('conn.ts', { Conn, Query, Version })
 		await update('api.ts', { Api })
-		const app = await container().provide(Api).build()
+		const app = await container().provide(Api, Version).build()
 		const sending = app.get(Api).send()
 		const querying = app.get(Api).query()
 		sending.catch(() => {})
 		querying.catch(() => {})
 		await Promise.all([mailerStarting.promise, conn.starting])
-		const updating = update('conn.ts', { Conn: service('Conn', () => 'new conn'), Query })
-		await new Promise((resolve) => setTimeout(resolve, 0))
-		mailerReady.open()
-		await updating
+		// Both are still in flight; the update commits anyway.
+		const updating = update('conn.ts', {
+			Conn: service('Conn', () => 'new conn'),
+			Query,
+			Version: service('Version', () => 2),
+		})
+		await until(() => app.get(Version) === 2)
 		expect(await app.get(Api).query()).toBe('new conn')
-		expect(await app.get(Api).send()).toBe(1)
-		expect(mailers).toBe(1)
+		const nextSend = app.get(Api).send()
+		mailerReady.open()
+		expect(await nextSend).toBe(2)
+		await updating
+		expect(mostActive).toBe(1)
 	})
 })

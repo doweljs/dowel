@@ -247,7 +247,7 @@ Nodes are matched by name, and a name belongs to the module that first declared 
 
 For each live container, an update:
 
-1. compiles the latest declarations and initializes them as a _proposal_, while the current generation keeps running. Root-scope instances from untouched modules, whose dependencies didn't change, are carried over, including those runs created on demand (it waits for any still being created);
+1. compiles the latest declarations and initializes them as a _proposal_, while the current generation keeps running. Root-scope instances from untouched modules, whose dependencies didn't change, are carried over, including those runs created on demand. One a run is still creating is not waited for: the new generation creates its own once that one has settled, never alongside it;
 2. commits the proposal once it is up. Opened containers and running executions are disposed (running executions have their `signal` aborted and are waited for), and so are the instances it replaced;
 3. leaves stale references, held by modules that weren't re-evaluated, working.
 

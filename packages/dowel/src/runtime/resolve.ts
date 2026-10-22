@@ -299,6 +299,9 @@ function init(plan: CachedPlan, chain: Chain): unknown {
 		abandon(store, record)
 		throw error
 	}
+	// A replaced generation may still be creating it; the factory runs once that settled, however.
+	const predecessor = store.predecessors?.[plan.cell]
+	if (predecessor !== undefined) waiting.push(predecessor.then(noop, noop))
 
 	const create = (): unknown => {
 		// Its dependencies may have settled after a sibling's failure cancelled the store.
