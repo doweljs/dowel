@@ -247,11 +247,17 @@ Nodes are matched by name, and a name belongs to the module that first declared 
 
 For each live container, an update:
 
-1. compiles the latest declarations and initializes them as a _proposal_, while the current generation keeps running. Root-scope instances from untouched modules, whose dependencies didn't change, are carried over, including those runs created on demand. One a run is still creating is not waited for: the new generation creates its own once that one has settled, never alongside it;
+1. compiles the latest declarations and initializes them as a _proposal_, while the current generation keeps running. Root-scope instances from untouched modules, whose dependencies didn't change, are carried over, including those runs created on demand. One a run is still creating is not waited for, nor carried: a run of the new generation that needs it creates its own once that one has settled, never alongside it. One the proposal itself creates at startup can overlap it, as any instance an update replaces overlaps the one still alive;
 2. commits the proposal once it is up. Opened containers and running executions are disposed (running executions have their `signal` aborted and are waited for), and so are the instances it replaced;
 3. leaves stale references, held by modules that weren't re-evaluated, working.
 
 The next update doesn't wait for that teardown, so a run that ignores its signal can't hold up later reloads.
+
+Reloading while a run is still creating a service on demand has limits:
+
+- That service is created again by the new generation, even when nothing it uses changed, so the side effects of a slow factory, such as a connection or a migration, can happen twice.
+- A factory that ignores its signal and never settles keeps waiting every run of the new generation that needs the same service, and the update that replaced it never resolves.
+- An old factory that calls a runner after the commit runs it in the new generation. If that run needs the same service, which now waits for the old factory, neither finishes.
 
 A proposal that fails to compile or initialize is discarded. The container stays on its last good generation, and `snapshot()` reports it as failed until a later update succeeds.
 

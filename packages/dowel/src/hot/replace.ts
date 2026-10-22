@@ -77,7 +77,7 @@ export async function replaceGeneration(access: HotAccess): Promise<Committed> {
 	// Commit. From here on the container runs the new generation, whatever happens below.
 	// What runs are still creating in the old root is not waited for, since only its teardown
 	// aborts it; the new generation creates its own once that settled, never alongside it.
-	followPredecessors(root, oldRoot, nextByKey, claimed)
+	followPredecessors(access.compiled, root, oldRoot, nextByKey, claimed)
 	access.swap(next, root)
 	for (const [record, plan] of carried) record.plan = plan
 	successors.set(oldRoot, { store: root, plans: next.plans })
@@ -86,18 +86,21 @@ export async function replaceGeneration(access: HotAccess): Promise<Committed> {
 
 /**
  * Makes the new root's creations wait for those of the same plans still in
- * flight in the old root, except those the proposal created itself, and
- * forgets each once it settled.
+ * flight in the old root, or still awaited there from the generation before
+ * it, except those the proposal created itself, and forgets each once it
+ * settled.
  */
 function followPredecessors(
+	committed: Compiled,
 	root: Store,
 	oldRoot: Store,
 	nextByKey: ReadonlyMap<string, CachedPlan>,
 	claimed: (plan: CachedPlan) => boolean,
 ): void {
-	for (const record of oldRoot.starting) {
-		const promise = oldRoot.pending?.[record.plan.cell]
-		const plan = nextByKey.get(planKey(record.plan))
+	for (const old of committed.scopes.get(ROOT.name)!.cached) {
+		// An old creation of its own waits for any predecessor it has, so it settles last.
+		const promise = oldRoot.pending?.[old.cell] ?? oldRoot.predecessors?.[old.cell]
+		const plan = nextByKey.get(planKey(old))
 		if (promise === undefined || plan === undefined || claimed(plan)) continue
 		root.predecessors ??= []
 		const predecessors = root.predecessors

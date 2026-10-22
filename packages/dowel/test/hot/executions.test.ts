@@ -322,6 +322,12 @@ describe('executions across replacements', () => {
 		await updating
 		// The two creations never ran at once.
 		expect(mostActive).toBe(1)
+		// The replaced generation's run settles: its teardown disposes it, or it finished first.
+		const outcome: unknown = await first.then(
+			(id) => id,
+			(error: { code?: string }) => error.code,
+		)
+		expect<unknown[]>([1, 'DISPOSED']).toContain(outcome)
 	})
 
 	test('an instance the proposal is still creating is not also carried over', async () => {
@@ -526,6 +532,51 @@ describe('executions across replacements', () => {
 		mailerReady.open()
 		expect(await nextSend).toBe(2)
 		await updating
+		expect(mostActive).toBe(1)
+	})
+
+	test('a creation two generations back is still waited for after two quick updates', async () => {
+		const Job = scope('job')
+		let created = 0
+		let active = 0
+		let mostActive = 0
+		const starting = gate()
+		const ready = gate()
+		const Mailer = service('Mailer', async () => {
+			const id = ++created
+			mostActive = Math.max(mostActive, ++active)
+			starting.open()
+			if (id === 1) await ready.promise
+			active--
+			return { id }
+		})
+		const Send = execution('Send', { scope: Job, entry: Mailer })
+		const Api = service(
+			'Api',
+			{ send: Send },
+			({ send }) =>
+				() =>
+					send((mailer) => mailer.id),
+		)
+		const Other = service('Other', () => 1)
+		await update('mail.ts', { Job, Mailer, Send, Api })
+		await update('other.ts', { Other })
+		const app = await container().provide(Api, Other).build()
+		app
+			.get(Api)()
+			.catch(() => {})
+		await starting.promise
+		// Neither update needs Mailer; the second commits while the first generation is still creating it.
+		const first = update('other.ts', { Other: service('Other', () => 2) })
+		await until(() => app.get(Other) === 2)
+		const second = update('other.ts', { Other: service('Other', () => 3) })
+		await until(() => app.get(Other) === 3)
+		const next = app.get(Api)()
+		await new Promise((resolve) => setTimeout(resolve, 0))
+		expect(created).toBe(1)
+		ready.open()
+		expect(await next).toBe(2)
+		await Promise.all([first, second])
 		expect(mostActive).toBe(1)
 	})
 })

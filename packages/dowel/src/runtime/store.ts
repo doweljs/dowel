@@ -47,9 +47,10 @@ export interface Store {
 	/** In-flight initializations, by cell. Allocated on first async init. */
 	pending: (Promise<unknown> | undefined)[] | null
 	/**
-	 * Creations of a replaced generation still in flight, by cell: one here
+	 * Creations of replaced generations still in flight, by cell: one here
 	 * waits for its predecessor to settle first, so the two never run at once.
-	 * Set by hot replacement.
+	 * Set by hot replacement at the commit, so what the proposal created at
+	 * startup is not covered.
 	 */
 	predecessors: (Promise<unknown> | undefined)[] | null
 	/** Instances whose factory has not settled yet; their signals abort when the store is cancelled. */
