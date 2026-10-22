@@ -8,7 +8,7 @@ import type { ServiceOptions } from '../../src/declare/service.ts'
 import {
 	bind,
 	container,
-	type execution,
+	execution,
 	type Infer,
 	optional,
 	type Slot,
@@ -16,9 +16,10 @@ import {
 	service,
 	slot,
 } from '../../src/index.ts'
-import type { DeclaredScope } from '../../src/model/checks.ts'
-import type { AnyScope } from '../../src/model/declarations.ts'
+import type { DeclaredScope, LiteralName } from '../../src/model/checks.ts'
+import type { AnyScope, AnyService } from '../../src/model/declarations.ts'
 import type {
+	CompositionIssues,
 	EmptySlotOptions,
 	EntryNotVisible,
 	IndefiniteName,
@@ -106,17 +107,169 @@ test('every API that takes a scope rejects one the types cannot pin down', () =>
 })
 
 test('declarations need one literal name', () => {
+	expectTypeOf<LiteralName<'A'>>().toEqualTypeOf<'A'>()
+	expectTypeOf<LiteralName<string>>().toEqualTypeOf<IndefiniteName<string>>()
+	expectTypeOf<LiteralName<'A' | 'B'>>().toEqualTypeOf<IndefiniteName<'A' | 'B'>>()
+	expectTypeOf<LiteralName<`job-${string}`>>().toEqualTypeOf<IndefiniteName<`job-${string}`>>()
 	const wide = 'A' as string
-	expectTypeOf(service(wide, () => 1)).toEqualTypeOf<IndefiniteName<string>>()
-	expectTypeOf(slot(wide)<number>()).toEqualTypeOf<IndefiniteName<string>>()
-	expectTypeOf(scope(wide)).toEqualTypeOf<IndefiniteName<string>>()
-	// @ts-expect-error: what a widened name declares cannot be provided
-	container().provide(service(wide, () => 1))
+	// @ts-expect-error: a widened service name
+	service(wide, () => 1)
+	// @ts-expect-error: a widened slot name
+	slot(wide)
+	// @ts-expect-error: a widened scope name
+	scope(wide)
+	// @ts-expect-error: a widened execution name
+	execution(wide, { scope: PerRequest, entry: Request })
+	// @ts-expect-error: a union
+	service('A' as 'A' | 'B', () => 1)
 
-	// A helper generic in the name is checked where it is called.
-	const make = <N extends string>(name: N) => service(name, () => 1)
-	expectTypeOf(make('Made').name).toEqualTypeOf<'Made'>()
-	expectTypeOf(make(wide)).toEqualTypeOf<IndefiniteName<string>>()
+	// An `any` argument fits any parameter, so an `any` name is caught where the node is used.
+	const anyName = null! as any
+	const ByAny = service(anyName, () => 1)
+	const ScopeByAny = scope(anyName)
+	// @ts-expect-error: as a dependency
+	service('UsesAny', { byAny: ByAny }, ({ byAny }) => byAny)
+	// @ts-expect-error: as a scope
+	slot('InAny', { scope: ScopeByAny })
+	expectTypeOf(container().provide(ByAny).build).toEqualTypeOf<
+		CompositionIssues<`'${any}' is not one literal name; name each declaration with one string literal`>
+	>()
+})
+
+test('a helper generic in a node it depends on or supplies compiles', () => {
+	const Work = scope('work')
+	const Input = slot('Input', { scope: Work })<number>()
+	const wrap = <S extends AnyService>(inner: S) => service('Wrap', { inner }, () => 1)
+	const fed = <I extends typeof Input>(input: I) =>
+		execution('Fed', { scope: Work, entry: Input, inputs: { input } })
+	expectTypeOf(wrap(Config).name).toEqualTypeOf<'Wrap'>()
+	expectTypeOf(fed(Input).name).toEqualTypeOf<'Fed'>()
+
+	// Or in a whole record of them.
+	const multi = <D extends { readonly [key: string]: AnyService }>(deps: D) =>
+		service('Multi', deps, () => 1)
+	const fedAll = <I extends { readonly input: typeof Input }>(inputs: I) =>
+		execution('FedAll', { scope: Work, entry: Input, inputs })
+	expectTypeOf(multi({ config: Config }).name).toEqualTypeOf<'Multi'>()
+	expectTypeOf(fedAll({ input: Input }).name).toEqualTypeOf<'FedAll'>()
+})
+
+test('a helper generic in the name can use what it declares', () => {
+	const Work = scope('work')
+	const feature = <const Name extends string>(name: Name) => {
+		const Input = slot(`${name}.input`, { scope: Work })<number>()
+		const Base = service(`${name}.base`, () => 1)
+		const Sum = service(
+			`${name}.sum`,
+			{ base: Base, input: Input, log: optional(Logger) },
+			({ base, input }) => base + input,
+		)
+		const Run = execution(`${name}.run`, { scope: Work, entry: Sum, inputs: { input: Input } })
+		const Limit = slot(`${name}.limit`)<number>()
+		const Child = scope(`${name}.child`, scope(`${name}.parent`))
+		const Scoped = slot(`${name}.scoped`, { scope: Child })<number>()
+		const builder = container().provide(Run, bind(Limit, Base)).override(Base, 2)
+		return { Input, Base, Run, Limit, Child, Scoped, builder }
+	}
+
+	const report = feature('report')
+	expectTypeOf(report.Run.name).toEqualTypeOf<'report.run'>()
+	expectTypeOf<keyof MetaOf<typeof report.Run>['graph']>().toEqualTypeOf<
+		'report.run' | 'report.sum' | 'report.base' | 'report.input' | 'Logger'
+	>()
+	expectTypeOf(report.Scoped.scope).toEqualTypeOf<'report.child'>()
+	void report.builder.build()
+
+	// A widened name passed to the helper is caught where what it declares is used.
+	const wide = feature('w' as string)
+	// @ts-expect-error: as a dependency
+	service('UsesBase', { base: wide.Base }, ({ base }) => base)
+	// @ts-expect-error: as an entry
+	execution('Reruns', { scope: Work, entry: wide.Base })
+	// @ts-expect-error: as an input
+	execution('Feeds', { scope: Work, entry: Users, inputs: { input: wide.Input } })
+	// @ts-expect-error: as a bound slot
+	bind(wide.Limit, 1)
+	// @ts-expect-error: as a scope
+	slot('InWide', { scope: wide.Child })
+	// The builder reports what it is given at build(), as it does other composition problems,
+	// together with what that reaches.
+	type Issue<Name extends string> =
+		`'${Name}' is not one literal name; name each declaration with one string literal`
+	type RunGraph = `${string}.run` | `${string}.sum` | `${string}.base` | `${string}.input`
+	expectTypeOf(container().provide(wide.Run).build).toEqualTypeOf<
+		CompositionIssues<Issue<RunGraph>>
+	>()
+	expectTypeOf(container().bind(wide.Limit, 1).build).toEqualTypeOf<
+		CompositionIssues<Issue<`${string}.limit`>>
+	>()
+	const logger = <const Name extends string>(name: Name) =>
+		service(`${name}.logger`, (): LoggerApi => ({ info() {} }))
+	expectTypeOf(container().bind(Logger, logger('w' as string)).build).toEqualTypeOf<
+		CompositionIssues<Issue<`${string}.logger`>>
+	>()
+	expectTypeOf(container().provide(wide.Run).override(wide.Base, 3).build).toEqualTypeOf<
+		CompositionIssues<Issue<RunGraph>>
+	>()
+	// So is a builder the helper made from them.
+	expectTypeOf(wide.builder.build).toEqualTypeOf<
+		CompositionIssues<Issue<RunGraph | `${string}.limit`>>
+	>()
+
+	// A node the helper names literally can still reach one it named from its parameter.
+	const wrapped = <const Name extends string>(name: Name) => {
+		const Inner = service(`${name}.inner`, () => 1)
+		return {
+			Outer: service('Outer', { inner: Inner }, ({ inner }) => inner),
+			Rerun: execution('Rerun', { scope: Work, entry: Inner }),
+		}
+	}
+	const hidden = wrapped('w' as string)
+	expectTypeOf(container().provide(hidden.Outer).build).toEqualTypeOf<
+		CompositionIssues<Issue<`${string}.inner`>>
+	>()
+	expectTypeOf(container().provide(hidden.Rerun).build).toEqualTypeOf<
+		CompositionIssues<Issue<`${string}.inner`>>
+	>()
+	void container().provide(wrapped('literal').Outer).build()
+
+	// So can a helper generic in a scope, given one named from a parameter.
+	const inScope = <Sc extends AnyScope>(target: Sc) => slot('InScope', { scope: target })<number>()
+	type ScopeIssue<Name extends string> =
+		`scope '${Name}' is not one literal name; name each scope with one string literal`
+	expectTypeOf(container().provide(inScope(wide.Child)).build).toEqualTypeOf<
+		CompositionIssues<ScopeIssue<`${string}.child` | `${string}.parent`>>
+	>()
+	void container().provide(inScope(report.Child)).build()
+
+	// A binding it makes is checked where it is supplied.
+	const supplier = <const Name extends string>(name: Name) => {
+		const Supplied = slot(`${name}.supplied`, { scope: Work })<number>()
+		return { supply: (value: number) => bind(Supplied, value) }
+	}
+	const Real = slot('real.supplied', { scope: Work })<number>()
+	const opens = async () => {
+		const app = await container()
+			.provide(service('UsesReal', { real: Real }, ({ real }) => real))
+			.build()
+		// @ts-expect-error: it would count as supplying 'real.supplied'
+		await app.open(Work, supplier('w' as string).supply(1))
+		await app.open(Work, bind(Real, 1))
+	}
+	void opens
+
+	// Nor can a scope below one it named from its parameter.
+	const nested = <const Name extends string>(name: Name) => scope('inner', scope(name))
+	// @ts-expect-error: its parent may be any scope
+	slot('InNested', { scope: nested('w' as string) })
+	expectTypeOf(
+		slot('InNested', { scope: nested('outer') })<number>().scope,
+	).toEqualTypeOf<'inner'>()
+
+	// A scope a helper names `root` cannot be used.
+	const named = <const Name extends string>(name: Name) => scope(name)
+	// @ts-expect-error: the container's own scope name is reserved
+	slot('InRoot', { scope: named('root') })
 })
 
 test('executions check their entry and inputs', () => {

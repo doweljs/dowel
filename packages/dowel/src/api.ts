@@ -1,6 +1,6 @@
 /** The public interfaces the runtime implements. */
 
-import type { DeclaredScope } from './model/checks.ts'
+import type { DeclaredName, DeclaredScope } from './model/checks.ts'
 import type {
 	AnyBinding,
 	AnyExecution,
@@ -219,7 +219,7 @@ export interface Container<
 	 */
 	open<Sc extends AnyScope, const B extends readonly AnyBinding[]>(
 		scope: Sc & DeclaredScope<Sc> & ChildCheck<Current, Sc> & OpenCheck<S, MetaOf<Sc>['name'], B>,
-		...bindings: B
+		...bindings: B & DeclaredName<B[number]>
 	): Promise<Container<S, MetaOf<Sc>, Supplied | BoundNames<B>>>
 
 	/** Describe every node in the graph and the state of instances visible from here. */

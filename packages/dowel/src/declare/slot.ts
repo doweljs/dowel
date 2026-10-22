@@ -1,4 +1,4 @@
-import type { DeclaredScope, Named } from '../model/checks.ts'
+import type { DeclaredScope, LiteralName } from '../model/checks.ts'
 import type { AnyScope, AnySlot, Optional, RootMeta, Slot } from '../model/declarations.ts'
 import type { EmptySlotOptions, MaybeMany, MaybeMissingScope } from '../model/diagnostics.ts'
 import type { MetaOf } from '../model/infer.ts'
@@ -68,15 +68,12 @@ type OptionMany<O extends SlotOptions> = O extends { readonly many: true } ? tru
  * const Middleware = slot('Middleware', { many: true })<Middleware>()
  * ```
  */
-export function slot<N extends string>(name: N): <T>() => Named<N, SlotAt<T, N, RootMeta, false>>
+export function slot<N extends string>(name: LiteralName<N>): <T>() => SlotAt<T, N, RootMeta, false>
 export function slot<N extends string, const O extends SlotOptions>(
-	name: N,
+	name: LiteralName<N>,
 	// Required here, so options that may be undefined are not mistaken for none.
 	options: O & ReadableOptions<N, O>,
-): <T>() => Named<
-	N,
-	SlotAt<OptionMany<O> extends true ? readonly T[] : T, N, OptionScope<O>, OptionMany<O>>
->
+): <T>() => SlotAt<OptionMany<O> extends true ? readonly T[] : T, N, OptionScope<O>, OptionMany<O>>
 export function slot(name: string, options?: SlotOptions): () => unknown {
 	const scope = options?.scope === undefined ? ROOT : scopeNode(options.scope)
 	const many = options?.many === true

@@ -4,6 +4,7 @@
  * `open()` and `override()` run against them.
  */
 
+import type { IndefiniteGraphIssues, IndefiniteNameIssue } from './checks.ts'
 import type {
 	AnyBinding,
 	AnyExecution,
@@ -103,7 +104,10 @@ export type Provide<S extends ContainerState, I> = S extends ContainerState
 				S['roots'],
 				S['bound'] | BindingKey<M>,
 				S['overridden'],
-				S['issues'] | BoundTwice<Extract<BindingKey<M>, S['bound']>>
+				| S['issues']
+				| BoundTwice<Extract<BindingKey<M>, S['bound']>>
+				| IndefiniteNameIssue<M['name']>
+				| IndefiniteNameIssue<ImplName<M>>
 			>
 		: I extends Service<any, infer M>
 			? Root<S, M['graph'], M['name']>
@@ -119,7 +123,7 @@ type Root<S extends ContainerState, G extends Graph, Name extends string> = Stat
 	S['roots'] | Name,
 	S['bound'],
 	S['overridden'],
-	S['issues']
+	S['issues'] | IndefiniteNameIssue<Name>
 >
 
 /**
@@ -135,6 +139,15 @@ type BindingKey<M extends { readonly name: string; readonly graph: Graph }> =
 		? Kind extends 'many'
 			? `${M['name']}<-${Deps}`
 			: M['name']
+		: never
+
+/** The service a binding's slot resolves to, if it binds one. */
+type ImplName<M extends { readonly name: string; readonly graph: Graph }> =
+	M['graph'][M['name']] extends {
+		readonly kind: 'bound' | 'many'
+		readonly deps: infer Deps extends string
+	}
+		? Deps
 		: never
 
 type BoundTwice<Key extends string> = Key extends `${infer Slot}<-${infer Item}`
@@ -201,7 +214,9 @@ export type Override<
 				S['roots'],
 				S['bound'],
 				S['overridden'] | Target,
-				S['issues']
+				| S['issues']
+				| IndefiniteNameIssue<Name>
+				| (I extends Service<any, infer M> ? IndefiniteNameIssue<M['name']> : never)
 			>
 		: never
 	: never
@@ -237,6 +252,7 @@ type CycleIssue<G extends Graph, Name> = Name extends keyof G & string
 /** Every problem `build()` reports before it is callable. */
 export type Issues<S extends ContainerState> =
 	| S['issues']
+	| IndefiniteGraphIssues<S['graph']>
 	| OverrideIssue<S, S['overridden']>
 	| CycleIssue<S['graph'], Extract<Decided<S['graph']>, Reachable<S>>>
 

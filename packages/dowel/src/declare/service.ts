@@ -1,6 +1,6 @@
 import type { ServiceContext } from '../api.ts'
 import { DowelError } from '../errors.ts'
-import type { DeclaredScope, Named } from '../model/checks.ts'
+import type { DeclaredNames, DeclaredScope, LiteralName } from '../model/checks.ts'
 import type { AnyScope, Deps, Service } from '../model/declarations.ts'
 import type { ScopeAboveDependencies } from '../model/diagnostics.ts'
 import type { ComputeMeta, MetaOf, Resolved } from '../model/infer.ts'
@@ -48,16 +48,16 @@ type ExplicitScope<Sc extends AnyScope> = [Sc] extends [never] ? never : MetaOf<
  * ```
  */
 export function service<N extends string, R, Sc extends AnyScope = never>(
-	name: N,
+	name: LiteralName<N>,
 	factory: (ctx: ServiceContext) => R,
 	options?: ServiceOptions<{}, Sc>,
-): Named<N, Service<Awaited<R>, ComputeMeta<N, {}, EffectiveScope<{}, ExplicitScope<Sc>>>>>
+): Service<Awaited<R>, ComputeMeta<N, {}, EffectiveScope<{}, ExplicitScope<Sc>>>>
 export function service<N extends string, const D extends Deps, R, Sc extends AnyScope = never>(
-	name: N,
-	deps: D & CheckScopes<D>,
+	name: LiteralName<N>,
+	deps: D & CheckScopes<D> & DeclaredNames<D>,
 	factory: (deps: Resolved<D>, ctx: ServiceContext) => R,
 	options?: ServiceOptions<D, Sc>,
-): Named<N, Service<Awaited<R>, ComputeMeta<N, D, EffectiveScope<D, ExplicitScope<Sc>>>>>
+): Service<Awaited<R>, ComputeMeta<N, D, EffectiveScope<D, ExplicitScope<Sc>>>>
 export function service(name: string, ...rest: unknown[]): unknown {
 	const standalone = typeof rest[0] === 'function'
 	const [deps, factory, options] = (

@@ -1,3 +1,4 @@
+import type { DeclaredName } from '../model/checks.ts'
 import type { Binding, Slot, SlotMeta } from '../model/declarations.ts'
 import type { BindingMetaOf, Impl } from '../model/infer.ts'
 import { implOf, slotNode } from '../nodes/coerce.ts'
@@ -16,7 +17,7 @@ import { type BindingNode, internal } from '../nodes/node.ts'
  * ```
  */
 export function bind<T, TM extends SlotMeta, const I extends Impl<T, TM>>(
-	slot: Slot<T, TM>,
+	slot: Slot<T, TM> & DeclaredName<Slot<T, TM>>,
 	impl: I,
 ): Binding<T, BindingMetaOf<TM, I>> {
 	const target = slotNode(slot)

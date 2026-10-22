@@ -54,7 +54,7 @@ export interface ReservedScopeName<Name extends string> {
 	readonly 'dowel: this scope name is reserved for the container itself': Name
 }
 
-/** A declaration named with a widened `string` or a union, which the types cannot tell apart from other nodes. */
+/** A node named with a widened `string`, a pattern or a union, which the types cannot tell apart from other nodes. */
 export interface IndefiniteName<Names extends string> {
 	readonly 'dowel: name each declaration with one string literal': Names
 }
