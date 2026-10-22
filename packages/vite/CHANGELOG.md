@@ -1,5 +1,12 @@
 # @doweljs/vite
 
+## 0.3.0
+
+### Patch Changes
+
+- Updated dependencies [c3cd479]
+  - @doweljs/core@0.3.0
+
 ## 0.2.0
 
 ### Patch Changes
