@@ -77,10 +77,10 @@ export function slot<N extends string, const O extends SlotOptions>(
 export function slot(name: string, options?: SlotOptions): () => unknown {
 	const scope = options?.scope === undefined ? ROOT : scopeNode(options.scope)
 	const many = options?.many === true
-	return () => {
-		const node: SlotNode = { kind: 'slot', id: allocateId(), name, scope, many }
-		return Object.freeze({ '~kind': 'slot', name, scope: scope.name, [internal]: node }) as AnySlot
-	}
+	// One slot per declaration: the call that gives it its type returns the same slot every time.
+	const node: SlotNode = { kind: 'slot', id: allocateId(), name, scope, many }
+	const declared = Object.freeze({ '~kind': 'slot', name, scope: scope.name, [internal]: node })
+	return () => declared as AnySlot
 }
 
 /**

@@ -52,7 +52,7 @@ export interface Composition {
 interface ScopeDraft extends ScopePlan {
 	cells: number
 	readonly values: Map<string, ScopeValuePlan>
-	readonly bound: Set<string>
+	readonly bound: Map<string, SlotNode>
 	readonly cached: CachedPlan[]
 	/** `order` is filled once compilation knows what is created eagerly. */
 	readonly needs: { readonly order: CachedPlan[]; readonly required: Set<string> }
@@ -165,7 +165,7 @@ class Compiler {
 			scope: node,
 			cells: 0,
 			values: new Map(),
-			bound: new Set(),
+			bound: new Map(),
 			cached: [],
 			needs: { order: [], required: new Set() },
 		}
@@ -265,7 +265,7 @@ class Compiler {
 	): { plan: Plan; binding: BindingInfo; deps: GraphNode['deps'] } {
 		const impl = this.bindings.get(slot)
 		if (impl !== undefined) {
-			if (scope !== ROOT) this.scopeDraft(scope).bound.add(slot.name)
+			if (scope !== ROOT) this.scopeDraft(scope).bound.set(slot.name, slot)
 			return { plan: this.planImpl(slot.name, scope, impl), binding: implInfo(impl), deps: [] }
 		}
 		if (scope !== ROOT) {
@@ -331,6 +331,7 @@ class Compiler {
 		const plan: ScopeValuePlan = {
 			kind: 'scopeValue',
 			name: slot.name,
+			slot,
 			scope,
 			deps: [],
 			cell: this.allocate(scope),

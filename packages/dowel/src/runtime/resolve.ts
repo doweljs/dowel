@@ -25,6 +25,7 @@ import {
 	disposeStore,
 	isCancellation,
 	markDisposed,
+	rewordCancellation,
 } from './dispose.ts'
 import {
 	type Chain,
@@ -223,6 +224,8 @@ export async function openStore(
 			try {
 				if (store.cancelled) throw store.why!()
 				await initialize(needs.order, opened.chain)
+				// Disposed or cancelled while its factories ran: what was created is torn down, not handed out.
+				if (store.cancelled) throw store.why!()
 			} catch (error) {
 				if (!cancelledFromOutside(store)) throw error
 				// Cancelled: it rejects with why, which its owner words, and with what failed for
@@ -435,12 +438,10 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 		beforeDisposal: async () => {
 			if (typeof phase === 'object') await phase
 		},
-	}).catch((error: unknown) => {
+	}).catch((error: unknown) =>
 		// Cancellation stopped the opening: the run reports that, with what else failed.
-		const [first, ...others] = errorsOf(error)
-		if (!isCancellation(first)) throw error
-		throw withCleanupFailures(notStarted(first), others, `Execution '${name}'`)
-	})
+		rewordCancellation(error, notStarted, `Execution '${name}'`),
+	)
 	const { store } = opened
 	// Cancelled before the body could start: the body never starts.
 	if (store.cancelled) {

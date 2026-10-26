@@ -11,7 +11,7 @@ import { DowelError } from './errors.ts'
 import type { EmptyState } from './model/state.ts'
 import { declaredNode, implOf, nodeOf, slotNode } from './nodes/coerce.ts'
 import { assertImplScope } from './nodes/hierarchy.ts'
-import { describe, type ImplNode, type SlotNode } from './nodes/node.ts'
+import { type BindingNode, describe, type ImplNode, internal, type SlotNode } from './nodes/node.ts'
 import { RootContainer } from './runtime/containers.ts'
 
 const EMPTY: Composition = {
@@ -46,7 +46,8 @@ class Builder {
 	}
 
 	bind(slot: unknown, impl: unknown): Builder {
-		return new Builder(withBinding(this.composition, slotNode(slot), implOf(impl)))
+		const node: BindingNode = { kind: 'binding', slot: slotNode(slot), impl: implOf(impl) }
+		return this.provide({ [internal]: node })
 	}
 
 	contribute(slot: unknown, impl: unknown): Builder {
@@ -92,13 +93,6 @@ class Builder {
 		}
 		return RootContainer.create(compiled)
 	}
-}
-
-function withBinding(composition: Composition, slot: SlotNode, impl: ImplNode): Composition {
-	const bindings = new Map(composition.bindings)
-	const contributions = new Map(composition.contributions)
-	addBinding(bindings, contributions, slot, impl)
-	return { ...composition, bindings, contributions }
 }
 
 /** Records a binding, or a contribution for a multi-binding slot, in maps the caller owns. */

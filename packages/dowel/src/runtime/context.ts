@@ -67,7 +67,9 @@ function own(name: string, record: InstanceRecord, resource: unknown, dispose: D
 	if (record.owned.has(resource)) {
 		throw new DowelError(
 			'DUPLICATE',
-			`Service '${name}' adopted a resource that another service already owns. A resource has one owner; depend on the owning service instead.`,
+			record.cleanups.some((cleanup) => cleanup.resource === resource)
+				? `Service '${name}' adopted the same resource twice. Adopt it once; it is disposed with the instance.`
+				: `Service '${name}' adopted a resource that another service already owns. A resource has one owner; depend on the owning service instead.`,
 		)
 	}
 	record.owned.add(resource)

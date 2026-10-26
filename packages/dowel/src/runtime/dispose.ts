@@ -1,6 +1,6 @@
 /** Disposal of instances and stores. */
 
-import { DowelError, errorsOf } from '../errors.ts'
+import { DowelError, errorsOf, withCleanupFailures } from '../errors.ts'
 import { cancelStore } from './cancel.ts'
 import { clearStore, type InstanceRecord, type Store } from './store.ts'
 
@@ -122,6 +122,21 @@ export function cancelledBy(error: unknown): Cancelled | undefined {
 
 export function isCancellation(error: unknown): boolean {
 	return cancelledBy(error) !== undefined
+}
+
+/**
+ * Rethrows `error`, the failure of some work, as `reword(first)` when the
+ * first failure it stands for is a cancellation, keeping the others as
+ * cleanup failures of `what`; any other failure is rethrown as it is.
+ */
+export function rewordCancellation(
+	error: unknown,
+	reword: (cancelled: unknown) => unknown,
+	what: string,
+): never {
+	const [first, ...others] = errorsOf(error)
+	if (!isCancellation(first)) throw error
+	throw withCleanupFailures(reword(first), others, what)
 }
 
 /** Disposes what a store owns, newest first, one after another, collecting failures. */

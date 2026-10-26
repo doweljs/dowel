@@ -32,6 +32,14 @@ export function supply(
 				`Slot '${slot.name}' is a multi-binding, which open() cannot supply. Contribute to it at build() instead.`,
 			)
 		}
+		// The graph's slot of that name is the one a value is for: another slot sharing it is a duplicate.
+		const known = scopePlan.bound.get(slot.name) ?? scopePlan.values.get(slot.name)?.slot
+		if (known !== undefined && known !== slot) {
+			throw new DowelError(
+				'DUPLICATE',
+				`Opening scope '${scopePlan.scope.name}' meets two distinct slots named '${slot.name}'. Declare a slot once and import it where it is used.`,
+			)
+		}
 		// Otherwise the graph resolves it another way and would silently ignore the value.
 		if (scopePlan.bound.has(slot.name)) {
 			throw new DowelError(
