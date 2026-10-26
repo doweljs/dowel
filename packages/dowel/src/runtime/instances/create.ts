@@ -96,7 +96,6 @@ export function init(plan: CachedPlan, chain: Chain): unknown {
 			`Service '${plan.name}' cannot be created because its container in scope '${plan.scope.name}' has been disposed.`,
 		)
 	}
-
 	const record: InstanceRecord = {
 		plan,
 		owned: chain[0]!.owned,
@@ -105,9 +104,30 @@ export function init(plan: CachedPlan, chain: Chain): unknown {
 		controller: null,
 	}
 	store.starting.add(record)
-	// Cached dependencies are created if nothing did yet, here or in a store above (on
-	// demand), and waited for while they initialize; any other value, a bound promise included,
-	// reaches the factory as it is.
+	const { values, waiting } = dependencies(plan, chain, store, record)
+	if (waiting.length === 0) return create(plan, values, record, store)
+	const created = Promise.all(waiting).then(
+		() => create(plan, values, record, store),
+		(error: unknown) => {
+			// A dependency failed, so the factory never runs.
+			abandon(store, record)
+			throw error
+		},
+	)
+	return remember(store, plan.cell, created)
+}
+
+/**
+ * The values of a plan's dependencies, with a promise for each still being
+ * created. Cached dependencies are created if nothing did yet, here or in a
+ * store above, and waited for; any other value reaches the factory as it is.
+ */
+function dependencies(
+	plan: CachedPlan,
+	chain: Chain,
+	store: Store,
+	record: InstanceRecord,
+): { values: unknown[]; waiting: Promise<void>[] } {
 	const values = new Array<unknown>(plan.deps.length)
 	const waiting: Promise<void>[] = []
 	try {
@@ -118,15 +138,15 @@ export function init(plan: CachedPlan, chain: Chain): unknown {
 				continue
 			}
 			const value = init(dep, chain)
-			if (isPromiseLike(value)) {
-				waiting.push(
-					untilCancelled(Promise.resolve(value), dep, store).then((ready) => {
-						values[i] = ready
-					}),
-				)
-			} else {
+			if (!isPromiseLike(value)) {
 				values[i] = value
+				continue
 			}
+			waiting.push(
+				untilCancelled(Promise.resolve(value), dep, store).then((ready) => {
+					values[i] = ready
+				}),
+			)
 		}
 	} catch (error) {
 		// A dependency failed synchronously, so the factory never runs: nothing waits for what
@@ -135,43 +155,43 @@ export function init(plan: CachedPlan, chain: Chain): unknown {
 		abandon(store, record)
 		throw error
 	}
-	const create = (): unknown => {
-		// Its dependencies may have settled after a sibling's failure cancelled the store.
-		if (store.cancelled) {
-			abandon(store, record)
-			throw cancellation(
-				`Service '${plan.name}' was not created: its scope stopped starting services after a failure, a disposal or its caller's cancellation.`,
-			)
-		}
-		let instance: unknown
-		try {
-			instance = construct(plan, values, contextFor(plan.name, record, store))
-		} catch (error) {
-			// Nothing adopted yet: fail synchronously, so the caller sees the error itself.
-			if (record.cleanups.length === 0) {
-				abandon(store, record)
-				throw error
-			}
-			return remember(store, plan.cell, discard(store, record, error))
-		}
-		if (!isPromiseLike(instance)) return settle(store, plan.cell, record, instance)
-		return remember(
-			store,
-			plan.cell,
-			Promise.resolve(instance).then(
-				(value) => settle(store, plan.cell, record, value),
-				(error: unknown) => discard(store, record, error),
-			),
+	return { values, waiting }
+}
+
+/** Runs the factory once its dependencies are ready, keeping the instance or a promise of it. */
+function create(
+	plan: CachedPlan,
+	values: unknown[],
+	record: InstanceRecord,
+	store: Store,
+): unknown {
+	// Its dependencies may have settled after a sibling's failure cancelled the store.
+	if (store.cancelled) {
+		abandon(store, record)
+		throw cancellation(
+			`Service '${plan.name}' was not created: its scope stopped starting services after a failure, a disposal or its caller's cancellation.`,
 		)
 	}
-
-	if (waiting.length === 0) return create()
-	const created = Promise.all(waiting).then(create, (error: unknown) => {
-		// A dependency failed, so the factory never runs.
-		abandon(store, record)
-		throw error
-	})
-	return remember(store, plan.cell, created)
+	let instance: unknown
+	try {
+		instance = construct(plan, values, contextFor(plan.name, record, store))
+	} catch (error) {
+		// Nothing adopted yet: fail synchronously, so the caller sees the error itself.
+		if (record.cleanups.length === 0) {
+			abandon(store, record)
+			throw error
+		}
+		return remember(store, plan.cell, discard(store, record, error))
+	}
+	if (!isPromiseLike(instance)) return settle(store, plan.cell, record, instance)
+	return remember(
+		store,
+		plan.cell,
+		Promise.resolve(instance).then(
+			(value) => settle(store, plan.cell, record, value),
+			(error: unknown) => discard(store, record, error),
+		),
+	)
 }
 
 /** Runs a service's factory with its dependencies by key, or collects a multi-binding's items. */
