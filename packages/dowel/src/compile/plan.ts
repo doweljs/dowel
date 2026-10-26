@@ -47,8 +47,6 @@ export interface ScopeValuePlan extends PlanBase {
 /** An execution: resolves to a runner that opens a container for `child` on each run. */
 export interface ExecutionPlan extends PlanBase {
 	readonly kind: 'execution'
-	/** The execution's node id, by which a runner finds its plan in later generations. */
-	readonly id: number
 	readonly entry: Plan
 	readonly child: ScopePlan
 	/** The slots each run supplies, by the key the runner takes each value by. */

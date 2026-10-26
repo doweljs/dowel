@@ -1,8 +1,9 @@
 /**
  * `@doweljs/devtools`: a page on the Vite dev server showing dowel's
- * dependency graph and the live state of every container in every
- * environment. It draws the graph `@doweljs/vite` knows from static
- * analysis, so that plugin is required too.
+ * dependency graph and the live state of every container an application
+ * passes to `track()` from `@doweljs/devtools/client`, in every environment.
+ * It draws the graph `@doweljs/vite` knows from static analysis, so that
+ * plugin is required too.
  *
  * ```ts
  * import dowel from '@doweljs/vite'
@@ -30,9 +31,12 @@ export default function devtools(options: DevtoolsOptions = {}): Plugin {
 	return {
 		name: '@doweljs/devtools',
 		apply: 'serve',
+		// Before Vite's own resolver, which would find the installed no-op `track()`.
+		enforce: 'pre',
 
 		configResolved(config) {
-			dowelApi(config).addClientModule(CLIENT_MODULE)
+			// Fails at startup when dowel() is missing, rather than on the page's first request.
+			dowelApi(config)
 		},
 
 		resolveId: {

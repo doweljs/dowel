@@ -14,20 +14,12 @@
 	"engines": {
 		"node": ">=20"
 	},
-	"sideEffects": [
-		"./dist/hot.js",
-		"./src/hot.ts"
-	],
+	"sideEffects": false,
 	"exports": {
 		".": {
 			"@doweljs/source": "./src/index.ts",
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
-		},
-		"./hot": {
-			"@doweljs/source": "./src/hot.ts",
-			"types": "./dist/hot.d.ts",
-			"default": "./dist/hot.js"
 		}
 	},
 	"files": [

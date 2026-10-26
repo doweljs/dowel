@@ -25,6 +25,3 @@ await app.dispose()
 const expected = JSON.stringify(['/a', 42, ['db']])
 const actual = JSON.stringify([...results, closed])
 if (actual !== expected) throw new Error(`Expected ${expected}, got ${actual}`)
-// The hot subpath resolves too; importing it last keeps hot replacement out of the run above.
-const hot = await import('@doweljs/core/hot')
-if (typeof hot.update !== 'function') throw new Error('@doweljs/core/hot does not export update()')

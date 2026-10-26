@@ -1,11 +1,11 @@
 # dowel
 
-Type-complete dependency injection for TypeScript, with hot replacement and devtools for Vite.
+Type-complete dependency injection for TypeScript, with devtools for Vite.
 
 | Package                                  | Description                                                                         |
 | ---------------------------------------- | ----------------------------------------------------------------------------------- |
 | [`@doweljs/core`](packages/dowel)        | The library: slots, services, scopes, executions and containers.                    |
-| [`@doweljs/vite`](packages/vite)         | Vite plugin: hot replacement of services, and diagnostics for the dependency graph. |
+| [`@doweljs/vite`](packages/vite)         | Vite plugin: diagnostics and a static graph of the dependency declarations.         |
 | [`@doweljs/devtools`](packages/devtools) | The dependency graph and live instance state, on the Vite dev server.               |
 
 ```ts

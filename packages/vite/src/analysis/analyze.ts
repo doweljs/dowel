@@ -3,8 +3,8 @@
  *
  * Only top-level `const X = service(...)` / `slot(...)()` declarations are
  * recognized. That is deliberate: a dependency graph declared at the top
- * level of a module is what makes hot replacement and devtools possible without running
- * the code.
+ * level of a module is what makes the devtools' graph possible without
+ * running the code.
  */
 
 import type { ESTree } from 'vite'
@@ -55,13 +55,6 @@ export interface ModuleAnalysis {
 	readonly reexports: ReadonlyMap<string, ImportRef>
 	/** Sources of `export * from` statements, searched in order for names not exported otherwise. */
 	readonly stars: readonly string[]
-	/**
-	 * True when every export is a dowel declaration, so the module can accept
-	 * its own hot updates without leaving importers with stale values.
-	 */
-	readonly selfContained: boolean
-	/** True when the module calls `container()`, which makes it an app root. */
-	readonly buildsContainer: boolean
 }
 
 type Node = ESTree.Node
@@ -95,8 +88,6 @@ export function analyze(id: string, code: string): ModuleAnalysis | null {
 	const exports = new Map<string, string>()
 	const reexports = new Map<string, ImportRef>()
 	const stars: string[] = []
-	// Whether the module exports anything besides its dowel declarations.
-	let mixed = false
 
 	for (const statement of program.body) {
 		switch (statement.type) {
@@ -120,22 +111,16 @@ export function analyze(id: string, code: string): ModuleAnalysis | null {
 					const found = declarationsOf(declaration, dowel)
 					declarations.push(...found)
 					for (const declarator of declaration.declarations) {
-						for (const name of boundNames(declarator.id)) {
-							exports.set(name, name)
-							if (!found.some((d) => d.local === name)) mixed = true
-						}
+						for (const name of boundNames(declarator.id)) exports.set(name, name)
 					}
-				} else if (declaration !== null) {
-					mixed = true
-				} else if (statement.source !== null) {
-					mixed = true
+				} else if (declaration === null && statement.source !== null) {
 					for (const specifier of statement.specifiers) {
 						reexports.set(moduleExportName(specifier.exported), {
 							source: statement.source.value,
 							imported: moduleExportName(specifier.local),
 						})
 					}
-				} else {
+				} else if (declaration === null) {
 					for (const specifier of statement.specifiers) {
 						exports.set(moduleExportName(specifier.exported), moduleExportName(specifier.local))
 					}
@@ -145,12 +130,9 @@ export function analyze(id: string, code: string): ModuleAnalysis | null {
 			case 'ExportDefaultDeclaration':
 				if (statement.declaration.type === 'Identifier') {
 					exports.set('default', statement.declaration.name)
-				} else {
-					mixed = true
 				}
 				break
 			case 'ExportAllDeclaration':
-				mixed = true
 				if (statement.exported === null) stars.push(statement.source.value)
 				else {
 					reexports.set(moduleExportName(statement.exported), {
@@ -165,22 +147,7 @@ export function analyze(id: string, code: string): ModuleAnalysis | null {
 	}
 
 	if (dowel.size === 0 && reexports.size === 0 && stars.length === 0) return null
-
-	const locals = new Set(declarations.map((d) => d.local))
-	for (const local of exports.values()) if (!locals.has(local)) mixed = true
-
-	const containerLocal = [...dowel].find(([, name]) => name === 'container')?.[0]
-	const buildsContainer = containerLocal !== undefined && callsIdentifier(program, containerLocal)
-
-	return {
-		declarations,
-		imports,
-		exports,
-		reexports,
-		stars,
-		selfContained: !mixed && !buildsContainer,
-		buildsContainer,
-	}
+	return { declarations, imports, exports, reexports, stars }
 }
 
 /** `Name` or `ns.Name`, the references a static graph can follow. */
@@ -447,29 +414,4 @@ function boundNames(pattern: ESTree.BindingPattern): string[] {
 		default:
 			return []
 	}
-}
-
-/** Whether any call expression in the tree calls the given identifier. */
-function callsIdentifier(root: Node, name: string): boolean {
-	const stack: unknown[] = [root]
-	while (stack.length > 0) {
-		const current = stack.pop()
-		if (typeof current !== 'object' || current === null) continue
-		if (Array.isArray(current)) {
-			stack.push(...current)
-			continue
-		}
-		const node = current as Node
-		if (
-			node.type === 'CallExpression' &&
-			node.callee.type === 'Identifier' &&
-			node.callee.name === name
-		) {
-			return true
-		}
-		for (const [key, value] of Object.entries(node)) {
-			if (key !== 'parent' && typeof value === 'object' && value !== null) stack.push(value)
-		}
-	}
-	return false
 }

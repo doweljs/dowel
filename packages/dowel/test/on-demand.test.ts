@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test'
 import { bind, container, DowelError, execution, scope, service, slot } from '../src/index.ts'
-import { hotAccess } from '../src/runtime/hooks.ts'
 import { gate, nextTask, PerRequest, Request, untyped } from './support.ts'
 
 describe('services reached only through executions', () => {
@@ -280,7 +279,7 @@ describe('services reached only through executions', () => {
 			await nextTask()
 			expect(unhandled).toEqual([])
 			// Retried on every run, the root does not keep a record of each failed attempt.
-			expect(untyped(app)[hotAccess].root.starting.size).toBe(0)
+			expect(untyped(app).chain[0].starting.size).toBe(0)
 		} finally {
 			process.off('unhandledRejection', onUnhandled)
 		}

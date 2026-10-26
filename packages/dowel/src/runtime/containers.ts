@@ -1,12 +1,11 @@
 /**
  * Live containers. The one `build()` returns is for scope `root`; each one
  * opened from it is for a child scope, with the chain of stores above it.
- * Containers look nodes up and check visibility; resolving and disposing is done by
- * the plans and stores behind them.
+ * Containers look nodes up and check visibility; resolving and disposing is
+ * done by the plans and stores behind them.
  */
 
 import type { Container, NodeInfo } from '../api.ts'
-import type { Composition } from '../compile/compile.ts'
 import { type Compiled, emptyScopePlan, isCached, type Plan } from '../compile/plan.ts'
 import { DowelError, errorsOf, withCleanup, withCleanupFailures } from '../errors.ts'
 import type { ScopeMeta } from '../model/declarations.ts'
@@ -15,10 +14,9 @@ import { bindingNode, declaredNode, scopeNode } from '../nodes/coerce.ts'
 import { sameLineage, scopeNames } from '../nodes/lineage.ts'
 import { type BindingNode, ROOT, type ScopeNode } from '../nodes/node.ts'
 import { cancellation, cancelledBy, disposeStore } from './dispose.ts'
-import { type HotAccess, hooks, hotAccess } from './hooks.ts'
 import { inspect } from './inspect.ts'
 import { initialize, type OpenedStore, openStore, resolve } from './resolve.ts'
-import { type Chain, newStore, noop, notVisible, type Store } from './store.ts'
+import { type Chain, notVisible, rootStore, type Store } from './store.ts'
 
 function lookup(compiled: Compiled, node: unknown): Plan {
 	const target = declaredNode(node, 'the node to resolve')
@@ -43,8 +41,8 @@ function parseScopeArgs(args: readonly unknown[]): { scope: ScopeNode; bindings:
 /** Behaviour shared by the root container and the containers opened from it. */
 abstract class ContainerBase {
 	protected constructor(
-		protected compiled: Compiled,
-		public chain: Chain,
+		protected readonly compiled: Compiled,
+		readonly chain: Chain,
 	) {}
 
 	protected get store(): Store {
@@ -54,7 +52,7 @@ abstract class ContainerBase {
 	get(node: unknown): any {
 		this.assertLive()
 		const plan = lookup(this.compiled, node)
-		// Plans and stores share canonical scope nodes, so identity is exact here.
+		// Plans and stores share scope nodes, so identity is exact here.
 		if (this.chain[plan.scope.depth]?.scope !== plan.scope) {
 			notVisible(plan.name, plan.scope, this.store.scope)
 		}
@@ -72,7 +70,7 @@ abstract class ContainerBase {
 		this.assertLive()
 		const { scope, bindings } = parseScopeArgs(args)
 		const current = this.store.scope
-		// Compared by lineage: a scope re-declared by hot replacement is a new object.
+		// Compared by lineage: a scope declared twice is two objects with the same names.
 		if (scope.parent === null || !sameLineage(scope.parent, current)) {
 			const [opening, here] = scopeNames(scope, current)
 			throw new DowelError(
@@ -98,6 +96,7 @@ abstract class ContainerBase {
 	}
 
 	inspect(): NodeInfo[] {
+		this.assertLive()
 		return inspect(this.compiled, this.chain)
 	}
 
@@ -119,74 +118,28 @@ abstract class ContainerBase {
 	}
 }
 
-let nextSerial = 0
-
 export class RootContainer extends ContainerBase implements Container {
 	protected readonly what = 'the container'
-	private readonly serial = nextSerial++
-	private ready: Promise<void> = Promise.resolve()
-	private initialized = false
-	/** Hot replacements in progress, which disposal waits for. */
-	private readonly work = new Set<Promise<void>>()
 	private disposal: Promise<void> | null = null
 
-	private constructor(
-		private readonly composition: Composition,
-		compiled: Compiled,
-		root: Store,
-	) {
+	private constructor(compiled: Compiled, root: Store) {
 		super(compiled, [root])
 	}
 
-	static async create(composition: Composition, compiled: Compiled): Promise<Container> {
+	/** Creates the container's root instances, disposing them again if one fails. */
+	static async create(compiled: Compiled): Promise<RootContainer> {
 		const rootPlan = compiled.scopes.get(ROOT.name)!
-		const root = newStore(ROOT, rootPlan.cells, new WeakSet(), null)
-		const container = new RootContainer(composition, compiled, root)
-		const init = withCleanup(
-			() => initialize(rootPlan.needs.order, [root]),
+		const container = new RootContainer(compiled, rootStore(rootPlan.cells))
+		await withCleanup(
+			() => initialize(rootPlan.needs.order, container.chain),
 			() => container.dispose(),
 		)
-		container.ready = init.then(noop, noop).then(() => {
-			container.initialized = true
-		})
-		if (hooks.enabled) hooks.containers.add(container)
-		await init
 		return container
 	}
 
-	get [hotAccess](): HotAccess {
-		return {
-			serial: this.serial,
-			composition: this.composition,
-			compiled: this.compiled,
-			root: this.store,
-			initialized: this.initialized,
-			ready: this.ready,
-			swap: (compiled, root) => {
-				this.compiled = compiled
-				this.chain = [root]
-			},
-			track: (work) => {
-				const settled = work.then(noop, noop)
-				this.work.add(settled)
-				void settled.then(() => this.work.delete(settled))
-			},
-		}
-	}
-
 	dispose(): Promise<void> {
-		this.disposal ??= this.runDisposal()
+		this.disposal ??= disposeStore(this.store, this.what)
 		return this.disposal
-	}
-
-	private async runDisposal(): Promise<void> {
-		hooks.containers.delete(this)
-		try {
-			await disposeStore(this.store, this.what)
-		} finally {
-			// A replacement either finishes tearing down the old generation or discards its proposal.
-			await Promise.all(this.work)
-		}
 	}
 }
 

@@ -8,7 +8,6 @@ Type-complete dependency injection for TypeScript.
 - **Ownership is explicit.** A service disposes exactly the resources it adopts, and a resource can't have two owners.
 - **Child work is injectable.** An _execution_ hands a service a typed runner for jobs and message handlers, each run in its own short-lived container.
 - **No decorators, reflection or proxies.** Plain values, about 9 KB minified and gzipped, and a `get()` of about 40–50 ns.
-- **Hot replaceable.** With [`@doweljs/vite`](../vite), editing a service swaps it inside running containers.
 
 ```ts
 import { container, service, slot } from '@doweljs/core'
@@ -52,7 +51,7 @@ const Request = slot('Request', { scope: PerRequest })<IncomingRequest>()
 const Middleware = slot('Middleware', { many: true })<Middleware>()
 ```
 
-Names must be unique within a container. The type system and hot replacement both identify nodes by name.
+Names must be unique within a container, since the type system identifies nodes by name.
 
 ### Services
 
@@ -238,28 +237,6 @@ Slot 'Logger' is not bound. Needed by Api → Users → Logger.
 ```
 
 Well-typed code rarely reaches them. They are a safety net for `any` and for dynamic composition.
-
-## Hot replacement
-
-`@doweljs/core/hot` lets a build tool re-register a module's declarations each time the module is re-evaluated; [`@doweljs/vite`](../vite) wires it up.
-
-Nodes are matched by name, and a name belongs to the module that first declared it; another module declaring it is rejected. Invalidation is per module and conservative: a factory may close over anything in its module, so every declaration in a re-evaluated module counts as changed.
-
-For each live container, an update:
-
-1. compiles the latest declarations and initializes them as a _proposal_, while the current generation keeps running. Root-scope instances from untouched modules, whose dependencies didn't change, are carried over, including those runs created on demand. One a run is still creating is not waited for, nor carried: a run of the new generation that needs it creates its own once that one has settled, never alongside it. One the proposal itself creates at startup can overlap it, as any instance an update replaces overlaps the one still alive;
-2. commits the proposal once it is up. Opened containers and running executions are disposed (running executions have their `signal` aborted and are waited for), and so are the instances it replaced;
-3. leaves stale references, held by modules that weren't re-evaluated, working.
-
-The next update doesn't wait for that teardown, so a run that ignores its signal can't hold up later reloads.
-
-Reloading while a run is still creating a service on demand has limits:
-
-- That service is created again by the new generation, even when nothing it uses changed, so the side effects of a slow factory, such as a connection or a migration, can happen twice.
-- A factory that ignores its signal and never settles keeps waiting every run of the new generation that needs the same service, and the update that replaced it never resolves.
-- An old factory that calls a runner after the commit runs it in the new generation. If that run needs the same service, which now waits for the old factory, neither finishes.
-
-A proposal that fails to compile or initialize is discarded. The container stays on its last good generation, and `snapshot()` reports it as failed until a later update succeeds.
 
 ## Design notes
 

@@ -20,6 +20,11 @@
 			"@doweljs/source": "./src/index.ts",
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
+		},
+		"./client": {
+			"@doweljs/source": "./src/track.ts",
+			"types": "./dist/track.d.ts",
+			"default": "./dist/track.js"
 		}
 	},
 	"files": [

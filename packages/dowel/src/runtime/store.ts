@@ -1,12 +1,12 @@
 /**
  * Instance storage. Every container owns one store: the container `build()`
- * returns for scope `root`, and each opened container for its scope. A resolution sees a chain of stores, indexed by
- * scope depth.
+ * returns for scope `root`, and each opened container for its scope. A
+ * resolution sees a chain of stores, indexed by scope depth.
  */
 
 import type { CachedPlan } from '../compile/plan.ts'
 import { DowelError } from '../errors.ts'
-import type { ScopeNode } from '../nodes/node.ts'
+import { ROOT, type ScopeNode } from '../nodes/node.ts'
 
 export const UNSET: unique symbol = Symbol('dowel.unset')
 
@@ -23,8 +23,7 @@ interface Cleanup {
 
 /** Disposal bookkeeping for one instance. */
 export interface InstanceRecord {
-	/** Re-pointed by hot replacement when the instance is carried into a new generation. */
-	plan: CachedPlan
+	readonly plan: CachedPlan
 	/** The container-wide ownership set its resources are registered in. */
 	readonly owned: WeakSet<object>
 	readonly cleanups: Cleanup[]
@@ -46,13 +45,6 @@ export interface Store {
 	readonly cells: unknown[]
 	/** In-flight initializations, by cell. Allocated on first async init. */
 	pending: (Promise<unknown> | undefined)[] | null
-	/**
-	 * Creations of replaced generations still in flight, by cell: one here
-	 * waits for its predecessor to settle first, so the two never run at once.
-	 * Set by hot replacement at the commit, so what the proposal created at
-	 * startup is not covered.
-	 */
-	predecessors: (Promise<unknown> | undefined)[] | null
 	/** Instances whose factory has not settled yet; their signals abort when the store is cancelled. */
 	readonly starting: Set<InstanceRecord>
 	/**
@@ -81,8 +73,17 @@ export interface Store {
 /** The stores a resolution can see: index `d` is the store at depth `d`. */
 export type Chain = readonly Store[]
 
-/** A store under `parent`, if any: born cancelled if `parent` is. */
-export function newStore(
+/** The store of the container `build()` returns. */
+export function rootStore(size: number): Store {
+	return store(ROOT, size, new WeakSet(), null)
+}
+
+/** A store opened under `parent`: born cancelled if `parent` is. */
+export function childStore(scope: ScopeNode, size: number, parent: Store): Store {
+	return store(scope, size, parent.owned, parent)
+}
+
+function store(
 	scope: ScopeNode,
 	size: number,
 	owned: WeakSet<object>,
@@ -92,7 +93,6 @@ export function newStore(
 		scope,
 		cells: new Array(size).fill(UNSET),
 		pending: null,
-		predecessors: null,
 		starting: new Set(),
 		cancelled: parent?.cancelled ?? false,
 		why: parent?.why ?? null,

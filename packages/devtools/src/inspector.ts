@@ -1,8 +1,8 @@
 /**
- * Polling every environment for its containers. Each poll sends one
- * numbered inspection request and collects the answers quoting it for a
- * short window; a late answer to an earlier poll is ignored, and a closed
- * tab drops out.
+ * Polling every environment for the containers `track()` keeps there. Each
+ * poll sends one numbered inspection request and collects the answers
+ * quoting it for a short window; a late answer to an earlier poll is ignored,
+ * and a closed tab drops out.
  */
 
 import type { DevEnvironment } from 'vite'

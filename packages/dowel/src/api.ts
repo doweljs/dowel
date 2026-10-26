@@ -222,7 +222,7 @@ export interface Container<
 		...bindings: B & DeclaredName<B[number]>
 	): Promise<Container<S, MetaOf<Sc>, Supplied | BoundNames<B>>>
 
-	/** Describe every node in the graph and the state of instances visible from here. */
+	/** Describe every node in the graph and the state of instances visible from here. Throws `DISPOSED` once the container is disposed. */
 	inspect(): readonly NodeInfo[]
 
 	/** Dispose every container and execution opened from here, then every instance, in reverse creation order. */

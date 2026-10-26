@@ -26,12 +26,11 @@ import {
 	isCancellation,
 	markDisposed,
 } from './dispose.ts'
-import { hooks } from './hooks.ts'
 import {
 	type Chain,
 	type Child,
+	childStore,
 	type InstanceRecord,
-	newStore,
 	noop,
 	notVisible,
 	type Store,
@@ -192,7 +191,7 @@ export async function openStore(
 	}
 	if (signal?.aborted) throw abortReason(signal)
 	const parent = chain[chain.length - 1]!
-	const store = newStore(scopePlan.scope, scopePlan.cells, parent.owned, parent)
+	const store = childStore(scopePlan.scope, scopePlan.cells, parent)
 	supply(scopePlan, store, bindings, needs.required)
 	const stop = (): void => cancelStore(store, () => abortReason(signal!))
 	signal?.addEventListener('abort', stop)
@@ -299,10 +298,6 @@ function init(plan: CachedPlan, chain: Chain): unknown {
 		abandon(store, record)
 		throw error
 	}
-	// A replaced generation may still be creating it; the factory runs once that settled, however.
-	const predecessor = store.predecessors?.[plan.cell]
-	if (predecessor !== undefined) waiting.push(predecessor.then(noop, noop))
-
 	const create = (): unknown => {
 		// Its dependencies may have settled after a sibling's failure cancelled the store.
 		if (store.cancelled) {
@@ -397,14 +392,9 @@ function track(store: Store, cell: number, promise: Promise<unknown>): Promise<u
 /** The function a dependent receives for an execution, bound to the stores down to the execution's scope. */
 function runner(plan: ExecutionPlan, chain: Chain): (...args: unknown[]) => Promise<unknown> {
 	const baseLength = plan.scope.depth + 1
-	let base: Chain = chain.slice(0, baseLength)
+	const base: Chain = chain.slice(0, baseLength)
 	if (base.length < baseLength) notVisible(plan.name, plan.scope)
-	// Remembered, so a long-lived runner follows each hot replacement once.
-	let current = plan
-	return async (...args) => {
-		;[current, base] = hooks.follow(current, base)
-		return run(current, base, args)
-	}
+	return (...args) => run(plan, base, args)
 }
 
 /** Runs once under `base`: opens the run's container, hands the entry to the body, and disposes the container. */

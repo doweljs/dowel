@@ -1,16 +1,15 @@
 /**
  * How scopes relate. Scopes are compared by lineage, the names from the root
- * down, so a scope re-declared by hot replacement matches the copy other
- * modules still hold.
+ * down, so two declarations of one scope, as a module evaluated twice makes,
+ * are the same scope, and a scope that merely shares a name is not.
  */
 
 import { DowelError } from '../errors.ts'
 import type { ImplNode, ScopeNode } from './node.ts'
 
 /**
- * Whether `ancestor` is `scope` itself or one of its ancestors. Scopes are
- * compared by lineage (see {@link sameLineage}), so a scope re-declared by
- * hot replacement still matches the copy other modules hold.
+ * Whether `ancestor` is `scope` itself or one of its ancestors, compared by
+ * lineage (see {@link sameLineage}).
  */
 export function isAtOrAbove(ancestor: ScopeNode, scope: ScopeNode): boolean {
 	let current: ScopeNode | null = scope
@@ -26,10 +25,9 @@ export function deeper(a: ScopeNode, b: ScopeNode): ScopeNode | null {
 }
 
 /**
- * Whether two scopes have the same names from the root down. Two copies of
- * a scope (one re-declared by hot replacement) are the same scope; two
- * distinct scopes sharing a lineage in one container are rejected when it
- * is built.
+ * Whether two scopes have the same names from the root down. Two
+ * declarations of one scope are the same scope; two distinct scopes sharing
+ * a lineage in one container are rejected when it is built.
  */
 export function sameLineage(a: ScopeNode, b: ScopeNode): boolean {
 	if (a.depth !== b.depth) return false

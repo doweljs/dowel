@@ -40,7 +40,7 @@ function live(kind: NodeInfo['kind'], name: string, fields: Partial<NodeInfo> = 
 }
 
 function container(nodes: NodeInfo[], id: number | string = 1): ReportedContainer {
-	return { id, status: { state: 'current', error: null }, nodes }
+	return { id, nodes }
 }
 
 const graph = (...nodes: GraphNode[]): Graph => ({ nodes, duplicates: [] })
