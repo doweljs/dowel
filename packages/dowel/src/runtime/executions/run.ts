@@ -36,59 +36,76 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 	}
 	const signal = signalOption(name, options)
 	const bindings = inputBindings(plan, values)
-	// The parent owns the run: its disposal waits for the body, which counts as running from just
-	// before it is called.
-	let phase: 'opening' | Promise<void> | 'settled' = 'opening'
-	// Why the body never started, worded for this run.
-	const notStarted = (reason: unknown): unknown => {
-		const by = cancelledBy(reason)
-		if (by === undefined) return reason
-		return cancellation(
-			by.kind === 'failure'
-				? `Execution '${name}' did not start: ${(reason as Error).message}`
-				: `Execution '${name}' was disposed before its body started.`,
-			by,
-			{ cause: reason },
-		)
-	}
+	// The parent owns the run: disposing it waits for the body before the run's container goes.
+	const running = new Body()
 	const opened = await openStore(base, plan.child, bindings, plan.needs, {
 		signal,
-		beforeDisposal: async () => {
-			if (typeof phase === 'object') await phase
-		},
+		beforeDisposal: () => running.settled(),
 	}).catch((error: unknown) =>
 		// Cancellation stopped the opening: the run reports that, with what else failed.
-		rewordCancellation(error, notStarted, `Execution '${name}'`),
+		rewordCancellation(error, (reason) => notStarted(name, reason), `Execution '${name}'`),
 	)
 	const { store } = opened
 	// Cancelled before the body could start: the body never starts.
 	if (store.cancelled) {
 		throw withCleanupFailures(
-			notStarted(store.why!()),
+			notStarted(name, store.why!()),
 			await failuresOf(() => opened.dispose()),
 			`Execution '${name}'`,
 		)
 	}
 	const context = new BodyContext(store, name)
 	const value = await withCleanup(
-		async () => {
-			let settle = noop
-			phase = new Promise<void>((resolve) => {
-				settle = resolve
-			})
-			try {
-				return await body(resolve(plan.entry, opened.chain), context)
-			} finally {
-				context.settle()
-				settle()
-				phase = 'settled'
-			}
-		},
+		() =>
+			running.run(async () => {
+				try {
+					return await body(resolve(plan.entry, opened.chain), context)
+				} finally {
+					context.settle()
+				}
+			}),
 		() => opened.dispose(),
 		`Execution '${name}'`,
 	)
 	await opened.dispose()
 	return value
+}
+
+/** Whether a run's body is running, for the disposal that must wait for it. It counts as running from just before it is called. */
+class Body {
+	private done: Promise<void> | null = null
+
+	/** Runs `work` as the body; `settled()` waits for it until it settles. */
+	async run<T>(work: () => Promise<T>): Promise<T> {
+		let settle = noop
+		this.done = new Promise<void>((resolve) => {
+			settle = resolve
+		})
+		try {
+			return await work()
+		} finally {
+			settle()
+			this.done = null
+		}
+	}
+
+	/** Waits for the body if it is running. */
+	async settled(): Promise<void> {
+		if (this.done !== null) await this.done
+	}
+}
+
+/** Why a body never started: a disposal or a failure above, worded for the run, or its caller's own reason. */
+function notStarted(name: string, reason: unknown): unknown {
+	const by = cancelledBy(reason)
+	if (by === undefined) return reason
+	return cancellation(
+		by.kind === 'failure'
+			? `Execution '${name}' did not start: ${(reason as Error).message}`
+			: `Execution '${name}' was disposed before its body started.`,
+		by,
+		{ cause: reason },
+	)
 }
 
 /**
