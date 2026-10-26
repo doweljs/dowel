@@ -1,8 +1,4 @@
-/**
- * What compilation produces and the runtime executes. Plans are data: each
- * names its dependencies' plans directly, so resolving one after build reads
- * store cells and follows references, with no lookups.
- */
+/** What compilation produces: plans naming their dependencies' plans directly, so resolution does no lookups. */
 
 import type { ExecutionInput, Factory, ScopeNode, SlotNode } from '../nodes/node.ts'
 
@@ -52,10 +48,7 @@ export interface ExecutionPlan extends PlanBase {
 	readonly child: ScopePlan
 	/** The slots each run supplies, by the key the runner takes each value by. */
 	readonly inputs: readonly ExecutionInput[]
-	/**
-	 * What each run's container initializes and requires: the entry, whose
-	 * creation creates what it reaches, and the slots of `child` it needs.
-	 */
+	/** What each run's container initializes and requires: the entry, and the slots of `child` it needs. */
 	readonly needs: ScopeNeeds
 }
 
@@ -68,10 +61,7 @@ export function isCached(plan: Plan): plan is CachedPlan {
 	return plan.kind === 'service' || plan.kind === 'many'
 }
 
-/**
- * What opening a container initializes and requires: for `open()`, what the
- * provided nodes reach in the scope; for a run, its entry.
- */
+/** What opening a container initializes and requires: for `open()` what the roots reach in the scope, for a run its entry. */
 export interface ScopeNeeds {
 	/** Cached plans to create, in dependency order; creating one creates what it reaches. */
 	readonly order: readonly CachedPlan[]

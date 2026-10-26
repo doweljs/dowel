@@ -1,23 +1,7 @@
 /**
- * The phantom types of what users declare: scopes, slots, services,
- * executions and bindings. Everything here exists so that the compiler can
- * prove a container complete before it is built; the runtime never reads
- * the `~`-prefixed properties.
- *
- * Vocabulary:
- * - A *slot* is a named placeholder the container fills when it is built. It
- *   has a type and a name but no factory.
- *   Slots are the only open points in a graph; a container is complete when every
- *   slot reachable from its roots is bound.
- * - A *service* is concrete. It has a factory and declares its dependencies as
- *   values, so its requirements are inferred rather than declared.
- * - A *scope* is a lifetime: `root` for the container, and named scopes
- *   below it that nest (`session` under `root`, `request` under `session`).
- *   Scoped slots introduce scopes; services live in the deepest scope among
- *   their dependencies, or at an explicitly deeper one.
- * - An *execution* is a declared piece of work in a child scope: a scope, an entry
- *   node and the inputs its containers need. A service depends on it to launch
- *   that work without holding the container.
+ * The phantom types of what users declare. They exist so the compiler can
+ * prove a container complete before it is built; the runtime never reads the
+ * `~`-prefixed properties.
  */
 
 import type { Graph } from './graph.ts'

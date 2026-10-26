@@ -1,9 +1,4 @@
-/**
- * Live containers. The one `build()` returns is for scope `root`; each one
- * opened from it is for a child scope, with the chain of stores above it.
- * Containers look nodes up and check visibility; resolving and disposing is
- * done by the plans and stores behind them.
- */
+/** Live containers: lookup and visibility checks over the plans and stores that do the work. */
 
 import type { Container, NodeInfo } from '../api.ts'
 import { type Compiled, emptyScopePlan, isCached, type Plan } from '../compile/plan.ts'
@@ -58,7 +53,7 @@ abstract class ContainerBase {
 		if (this.chain[plan.scope.depth]?.scope !== plan.scope) {
 			notVisible(plan.name, plan.scope, this.store.scope)
 		}
-		// Values and runners need nothing created, so only services must have been created with the container.
+		// Only services need creating, so only they must have been created with the container.
 		if (isCached(plan) && !this.compiled.eager.has(plan)) {
 			throw new DowelError(
 				'CREATED_ON_DEMAND',
