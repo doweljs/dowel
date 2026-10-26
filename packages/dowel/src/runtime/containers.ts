@@ -42,7 +42,7 @@ function parseScopeArgs(args: readonly unknown[]): { scope: ScopeNode; bindings:
 abstract class ContainerBase {
 	protected constructor(
 		protected readonly compiled: Compiled,
-		readonly chain: Chain,
+		protected readonly chain: Chain,
 	) {}
 
 	protected get store(): Store {
