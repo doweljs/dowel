@@ -10,7 +10,7 @@ import type { Compiled } from './compile/plan.ts'
 import { DowelError } from './errors.ts'
 import type { EmptyState } from './model/state.ts'
 import { declaredNode, implOf, nodeOf, slotNode } from './nodes/coerce.ts'
-import { assertImplScope } from './nodes/lineage.ts'
+import { assertImplScope } from './nodes/hierarchy.ts'
 import { describe, type ImplNode, type SlotNode } from './nodes/node.ts'
 import { RootContainer } from './runtime/containers.ts'
 

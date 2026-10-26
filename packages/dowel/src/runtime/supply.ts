@@ -1,6 +1,6 @@
 import type { ScopePlan } from '../compile/plan.ts'
 import { DowelError } from '../errors.ts'
-import { sameLineage, scopeNames } from '../nodes/lineage.ts'
+import { scopeNames } from '../nodes/hierarchy.ts'
 import { type BindingNode, ROOT } from '../nodes/node.ts'
 import type { Store } from './store.ts'
 
@@ -19,7 +19,7 @@ export function supply(
 				`Slot '${slot.name}' was bound to a service when opening a container. The bindings open() takes carry values; bind the service at build() instead.`,
 			)
 		}
-		if (!sameLineage(slot.scope, scopePlan.scope)) {
+		if (slot.scope !== scopePlan.scope) {
 			const [lives, opening] = scopeNames(slot.scope, scopePlan.scope)
 			throw new DowelError(
 				'INVALID_SCOPE',

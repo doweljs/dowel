@@ -13,7 +13,7 @@ import type { EntryNotVisible } from '../model/diagnostics.ts'
 import type { DependencyGraph, GraphOf, Infer, MetaOf, NameOf } from '../model/infer.ts'
 import type { UnionToIntersection } from '../model/util.ts'
 import { declaredNode, scopeNode, slotNode } from '../nodes/coerce.ts'
-import { isAtOrAbove, sameLineage, scopeNames } from '../nodes/lineage.ts'
+import { isAtOrAbove, scopeNames } from '../nodes/hierarchy.ts'
 import {
 	allocateId,
 	type ExecutionInput,
@@ -164,7 +164,7 @@ export function execution(
 				`Execution '${name}' lists multi-binding '${slot.name}' as an input. Inputs are scoped slots each run supplies a value for.`,
 			)
 		}
-		if (!sameLineage(slot.scope, scope)) {
+		if (slot.scope !== scope) {
 			const [lives, runs] = scopeNames(slot.scope, scope)
 			throw new DowelError(
 				'INVALID_SCOPE',

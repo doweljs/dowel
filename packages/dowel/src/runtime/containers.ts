@@ -11,7 +11,7 @@ import { DowelError, errorsOf, withCleanup, withCleanupFailures } from '../error
 import type { ScopeMeta } from '../model/declarations.ts'
 import type { ContainerState } from '../model/state.ts'
 import { bindingNode, declaredNode, scopeNode } from '../nodes/coerce.ts'
-import { sameLineage, scopeNames } from '../nodes/lineage.ts'
+import { assertDistinctNames, scopeNames } from '../nodes/hierarchy.ts'
 import { type BindingNode, ROOT, type ScopeNode } from '../nodes/node.ts'
 import { cancellation, cancelledBy, disposeStore } from './dispose.ts'
 import { inspect } from './inspect.ts'
@@ -70,15 +70,17 @@ abstract class ContainerBase {
 		this.assertLive()
 		const { scope, bindings } = parseScopeArgs(args)
 		const current = this.store.scope
-		// Compared by lineage: a scope declared twice is two objects with the same names.
-		if (scope.parent === null || !sameLineage(scope.parent, current)) {
+		if (scope.parent !== current) {
 			const [opening, here] = scopeNames(scope, current)
 			throw new DowelError(
 				'INVALID_SCOPE',
 				`Scope '${opening}' is not a child of '${here}', so it cannot be opened here. A container opens only the scopes directly below its own.`,
 			)
 		}
-		const scopePlan = this.compiled.scopes.get(scope.name) ?? emptyScopePlan(scope)
+		const known = this.compiled.scopes.get(scope.name)
+		// The graph may place nodes in another scope of that name, which this one must not open.
+		if (known !== undefined) assertDistinctNames(known.scope, scope)
+		const scopePlan = known ?? emptyScopePlan(scope)
 		const opened = await openStore(this.chain, scopePlan, bindings, scopePlan.needs).catch(
 			(error: unknown) => {
 				// Disposal stopped the opening: reported as such, with what else failed.

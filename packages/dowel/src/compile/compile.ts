@@ -11,7 +11,7 @@
 
 import { DowelError, formatPath } from '../errors.ts'
 import { dependencyOf } from '../nodes/coerce.ts'
-import { assertImplScope, isAtOrAbove, scopeNames } from '../nodes/lineage.ts'
+import { assertImplScope, isAtOrAbove, scopeNames } from '../nodes/hierarchy.ts'
 import {
 	type DeclaredNode,
 	type ExecutionNode,
