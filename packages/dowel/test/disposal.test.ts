@@ -201,4 +201,35 @@ describe('ownership and disposal', () => {
 		expect(() => saved.defer(() => {})).toThrow(/has been disposed/)
 		expect(() => saved.adopt({}, () => {})).toThrow(/has been disposed/)
 	})
+
+	test('disposing the container while a scope opens rejects the open', async () => {
+		const Sync = service('Sync', { req: Request }, ({ req }) => req.url)
+		const app = await container().provide(Sync).build()
+		const opening = app.open(PerRequest, bind(Request, { url: '/' }))
+		const disposal = app.dispose()
+		await expect(opening).rejects.toThrow(/Scope 'request' was disposed while it opened/)
+		await disposal
+	})
+
+	test('a container refuses work as soon as its disposal starts', async () => {
+		const Sync = service('Sync', { req: Request }, ({ req }) => req.url)
+		const app = await container().provide(Sync).build()
+		const request = await app.open(PerRequest, bind(Request, { url: '/' }))
+		const disposal = request.dispose()
+		expect(() => request.get(Sync)).toThrow(/has been disposed/)
+		expect(() => request.inspect()).toThrow(/has been disposed/)
+		await disposal
+		await app.dispose()
+	})
+
+	test('a service adopting one resource twice is told so', async () => {
+		const Twice = service('Twice', (ctx) => {
+			const resource = { [Symbol.dispose]: () => {} }
+			ctx.use(resource)
+			ctx.use(resource)
+		})
+		await expect(container().provide(Twice).build()).rejects.toThrow(
+			/Service 'Twice' adopted the same resource twice/,
+		)
+	})
 })

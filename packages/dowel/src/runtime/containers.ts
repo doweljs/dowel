@@ -7,13 +7,13 @@
 
 import type { Container, NodeInfo } from '../api.ts'
 import { type Compiled, emptyScopePlan, isCached, type Plan } from '../compile/plan.ts'
-import { DowelError, errorsOf, withCleanup, withCleanupFailures } from '../errors.ts'
+import { DowelError, withCleanup } from '../errors.ts'
 import type { ScopeMeta } from '../model/declarations.ts'
 import type { ContainerState } from '../model/state.ts'
 import { bindingNode, declaredNode, scopeNode } from '../nodes/coerce.ts'
 import { assertDistinctNames } from '../nodes/hierarchy.ts'
 import { type BindingNode, ROOT, type ScopeNode } from '../nodes/node.ts'
-import { cancellation, cancelledBy, disposeStore } from './dispose.ts'
+import { cancellation, cancelledBy, disposeStore, rewordCancellation } from './dispose.ts'
 import { inspect } from './inspect.ts'
 import { initialize, type OpenedStore, openStore, resolve } from './resolve.ts'
 import { type Chain, notVisible, rootStore, type Store } from './store.ts'
@@ -84,17 +84,20 @@ abstract class ContainerBase {
 			assertDistinctNames(known.scope, scope, opening)
 		const scopePlan = known ?? emptyScopePlan(scope)
 		const opened = await openStore(this.chain, scopePlan, bindings, scopePlan.needs).catch(
-			(error: unknown) => {
+			(error: unknown) =>
 				// Disposal stopped the opening: reported as such, with what else failed.
-				const [first, ...others] = errorsOf(error)
-				const by = cancelledBy(first)
-				if (by === undefined) throw error
-				throw withCleanupFailures(
-					cancellation(`Scope '${scope.name}' was disposed while it opened.`, by, { cause: first }),
-					others,
-					`Opening scope '${scope.name}'`,
-				)
-			},
+				rewordCancellation(
+					error,
+					(first) =>
+						cancellation(
+							`Scope '${scope.name}' was disposed while it opened.`,
+							cancelledBy(first),
+							{
+								cause: first,
+							},
+						),
+					opening,
+				),
 		)
 		return new ChildContainer(this.compiled, opened)
 	}
@@ -112,8 +115,9 @@ abstract class ContainerBase {
 
 	protected abstract readonly what: string
 
+	/** Disposal cancels a store before anything is waited for, so this refuses work as soon as it starts. */
 	private assertLive(): void {
-		if (this.store.disposed) {
+		if (this.store.cancelled) {
 			throw new DowelError(
 				'DISPOSED',
 				`${this.what[0]!.toUpperCase()}${this.what.slice(1)} has been disposed.`,

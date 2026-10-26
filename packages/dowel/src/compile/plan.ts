@@ -4,7 +4,7 @@
  * store cells and follows references, with no lookups.
  */
 
-import type { ExecutionInput, Factory, ScopeNode } from '../nodes/node.ts'
+import type { ExecutionInput, Factory, ScopeNode, SlotNode } from '../nodes/node.ts'
 
 /** An edge to a dependency: the key a factory receives it under, and whether it was declared optional. */
 export interface PlanDep {
@@ -41,6 +41,7 @@ export interface ValuePlan extends PlanBase {
 /** A scoped slot whose value `open()` writes into `cell` of its scope's store. */
 export interface ScopeValuePlan extends PlanBase {
 	readonly kind: 'scopeValue'
+	readonly slot: SlotNode
 	readonly cell: number
 }
 
@@ -86,7 +87,7 @@ export interface ScopePlan {
 	/** Scoped slots supplied when a container for this scope opens, by name. Optional ones may be omitted. */
 	readonly values: ReadonlyMap<string, ScopeValuePlan>
 	/** Slots in this scope whose value build() decides, by name; open() cannot supply them. */
-	readonly bound: ReadonlySet<string>
+	readonly bound: ReadonlyMap<string, SlotNode>
 	/** Every cached plan in the scope, in dependency order, whether created eagerly or on demand. */
 	readonly cached: readonly CachedPlan[]
 	/** What `open()` initializes and requires: what the provided nodes reach, outside executions. */
@@ -99,7 +100,7 @@ export function emptyScopePlan(scope: ScopeNode): ScopePlan {
 		scope,
 		cells: 0,
 		values: new Map(),
-		bound: new Set(),
+		bound: new Map(),
 		cached: [],
 		needs: { order: [], required: new Set() },
 	}

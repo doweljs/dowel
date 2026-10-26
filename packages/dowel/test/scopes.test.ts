@@ -216,4 +216,19 @@ describe('nested scopes', () => {
 			/The container meets two distinct scopes named 'x'/,
 		)
 	})
+
+	test('a slot is one node however often its type is applied', () => {
+		const declared = slot('Applied', { scope: PerRequest })
+		expect(declared<number>()).toBe(untyped(declared<string>()))
+	})
+
+	test('open() supplies the slot the graph reaches, not another slot of that name', async () => {
+		const Twin = slot('Request', { scope: PerRequest })<string>()
+		const Needs = service('Needs', { req: Request }, ({ req }) => req.url)
+		const app = await container().provide(Needs).build()
+		await expect(untyped(app).open(PerRequest, bind(Twin, 'oops'))).rejects.toThrow(
+			/Opening scope 'request' meets two distinct slots named 'Request'/,
+		)
+		await app.dispose()
+	})
 })
