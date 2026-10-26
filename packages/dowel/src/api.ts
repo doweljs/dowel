@@ -14,24 +14,14 @@ import type {
 	Slot,
 	SlotMeta,
 } from './model/declarations.ts'
-import type {
-	CompositionIssues,
-	IncompleteExecutions,
-	InputsBoundAtBuild,
-	MissingBindings,
-} from './model/diagnostics.ts'
-import type { NeededBy } from './model/graph.ts'
 import type { BindingMetaOf, Impl, ImplAt, MetaOf } from './model/infer.ts'
 import type {
-	BoundExecutionInputs,
 	BoundNames,
+	BuildSignature,
 	ChildCheck,
 	ContainerState,
 	GetResult,
-	Issues,
 	KnownLength,
-	Missing,
-	MissingExecutionInputs,
 	OpenCheck,
 	Overridable,
 	Override,
@@ -41,7 +31,6 @@ import type {
 	Resolvable,
 	TargetOf,
 } from './model/state.ts'
-import type { Simplify } from './model/util.ts'
 /**
  * The context handed to every factory. It mirrors `AsyncDisposableStack`:
  * a factory owns what it adopts, and nothing else.
@@ -161,15 +150,7 @@ export interface ContainerBuilder<S extends ContainerState> {
 	 * once the composition is complete; on failure, what was created is
 	 * disposed before the promise rejects.
 	 */
-	readonly build: [Issues<S>] extends [never]
-		? [Missing<S>] extends [never]
-			? [keyof MissingExecutionInputs<S>] extends [never]
-				? [keyof BoundExecutionInputs<S>] extends [never]
-					? () => Promise<Container<S>>
-					: InputsBoundAtBuild<Simplify<BoundExecutionInputs<S>>>
-				: IncompleteExecutions<Simplify<MissingExecutionInputs<S>>>
-			: MissingBindings<Simplify<NeededBy<S['graph'], Missing<S>>>>
-		: CompositionIssues<Issues<S>>
+	readonly build: BuildSignature<S>
 }
 
 /** A container, for the `root` scope or one opened for a child scope; it sees its scope and those above. */

@@ -4,6 +4,7 @@
  * `open()` and `override()` run against them.
  */
 
+import type { Container } from '../api.ts'
 import type { IndefiniteGraphIssues, IndefiniteNameIssue } from './checks.ts'
 import type {
 	AnyBinding,
@@ -18,7 +19,11 @@ import type {
 	Slot,
 } from './declarations.ts'
 import type {
+	CompositionIssues,
 	CreatedOnDemand,
+	IncompleteExecutions,
+	InputsBoundAtBuild,
+	MissingBindings,
 	MissingScopeValues,
 	NotChildScope,
 	NotProvided,
@@ -266,6 +271,20 @@ export type MissingExecutionInputs<S extends ContainerState> = MissingInputs<S['
 
 /** Executions with inputs that are also bound at build(). */
 export type BoundExecutionInputs<S extends ContainerState> = BoundInputs<S['graph'], S['roots']>
+
+/**
+ * The type of `build`: callable once the four checks pass, in this order, or
+ * else the first failing check's diagnostic, which names what to fix.
+ */
+export type BuildSignature<S extends ContainerState> = [Issues<S>] extends [never]
+	? [Missing<S>] extends [never]
+		? [keyof MissingExecutionInputs<S>] extends [never]
+			? [keyof BoundExecutionInputs<S>] extends [never]
+				? () => Promise<Container<S>>
+				: InputsBoundAtBuild<Simplify<BoundExecutionInputs<S>>>
+			: IncompleteExecutions<Simplify<MissingExecutionInputs<S>>>
+		: MissingBindings<Simplify<NeededBy<S['graph'], Missing<S>>>>
+	: CompositionIssues<Issues<S>>
 
 type Check<Name extends string, N, S extends ContainerState, Current extends ScopeMeta> =
 	Name extends ReachEager<S['graph'], S['roots']>
