@@ -25,10 +25,7 @@ async function start(): Promise<Harness> {
 		logLevel: 'silent',
 		server: { middlewareMode: true, ws: false },
 		resolve: {
-			alias: [
-				{ find: /^@doweljs\/core\/evolve$/, replacement: `${dowelSrc}/evolve.ts` },
-				{ find: /^@doweljs\/core$/, replacement: `${dowelSrc}/index.ts` },
-			],
+			alias: [{ find: /^@doweljs\/core$/, replacement: `${dowelSrc}/index.ts` }],
 		},
 		plugins: [dowel(), devtools()],
 	})
@@ -90,11 +87,12 @@ describe('@doweljs/devtools', () => {
 		])
 	})
 
-	test('reports the applications hot() keeps in each environment', async () => {
+	test('reports the containers track() keeps in each environment', async () => {
 		const state = (await fetch(`${url}/__dowel/state.json`).then((r) => r.json())) as State
-		const [lineage] = state['ssr'] ?? []
-		expect(lineage).toMatchObject({ generation: 1, failure: null, retiring: [] })
-		expect(lineage?.nodes.map((node) => [node.name, node.status])).toEqual([
+		// The module runner is a client of the environment, so the id carries its number.
+		expect(state['ssr']?.map((container) => container.id)).toEqual(['1.1'])
+		const [container] = state['ssr'] ?? []
+		expect(container?.nodes.map((node) => [node.name, node.status])).toEqual([
 			['Db', 'ready'],
 			['Users', 'ready'],
 		])

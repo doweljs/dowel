@@ -11,7 +11,7 @@ import type { Deps } from '../model/declarations.ts'
 
 /**
  * Local to this copy of dowel: ids and `ROOT` are per copy too, so nodes from
- * another copy must not pass for ours. Only a successor accepts them, by name.
+ * another copy must not pass for ours.
  */
 export const internal: unique symbol = Symbol('dowel.internal')
 

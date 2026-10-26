@@ -1,7 +1,6 @@
 /**
  * The `ServiceContext` a factory receives: what the instance owns, the
- * callbacks it defers, the effect it runs while its generation is active,
- * and the signal that tells it to stop.
+ * callbacks it defers, and the signal that tells it to stop.
  */
 
 import type { ServiceContext } from '../api.ts'
@@ -40,30 +39,6 @@ export function contextFor(name: string, record: InstanceRecord, store: Store): 
 		defer: (dispose) => {
 			assertLive('defer')
 			record.cleanups.push({ dispose, resource: null })
-		},
-		whileActive: (start) => {
-			assertLive('whileActive')
-			if (!record.constructing) {
-				throw new DowelError(
-					'INVALID_EFFECT',
-					`Service '${name}' called ctx.whileActive() after its factory returned. Register the effect while the factory runs, so that it starts with the generation.`,
-				)
-			}
-			if (store.scope.depth !== 0) {
-				throw new DowelError(
-					'INVALID_EFFECT',
-					`Service '${name}' lives in scope '${store.scope.name}', but only root-scope services run effects with ctx.whileActive(). Start the work from a run instead.`,
-				)
-			}
-			if (record.effect !== null) {
-				throw new DowelError(
-					'INVALID_EFFECT',
-					`Service '${name}' called ctx.whileActive() twice. An instance runs one effect, whose hand-over is matched by the service's name.`,
-				)
-			}
-			const effect = store.generation.add(name, start, () => signalOf(record, store))
-			record.effect = effect
-			record.cleanups.push({ dispose: () => store.generation.drop(effect), resource: null })
 		},
 		get signal() {
 			return signalOf(record, store)

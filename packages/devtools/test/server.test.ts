@@ -16,7 +16,6 @@ interface FakeResponse {
 
 const dowel: DowelPluginApi = {
 	graph: () => ({ nodes: [], duplicates: [] }),
-	addClientModule: () => {},
 }
 
 /** Replies for a tab: to the request being made, unless another is named. */
@@ -35,8 +34,8 @@ function fakeServer(answer: (reply: Reply, request: number) => void) {
 			send: (event: string, { request }: { request: number }) => {
 				if (event !== 'dowel:inspect') return
 				answer((tab, quoted = request) => {
-					const lineages = [{ id: (tab as { container?: number }).container ?? 1, nodes: [] }]
-					listeners.get('dowel:state')!({ request: quoted, environment: 'client', lineages }, tab)
+					const containers = [{ id: (tab as { container?: number }).container ?? 1, nodes: [] }]
+					listeners.get('dowel:state')!({ request: quoted, environment: 'client', containers }, tab)
 				}, request)
 			},
 		},

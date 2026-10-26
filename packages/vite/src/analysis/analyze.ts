@@ -1,6 +1,5 @@
 /**
- * Static analysis of a module's dowel declarations, and of whether it keeps
- * a container evolving with `hot()`.
+ * Static analysis of a module's dowel declarations.
  *
  * Only top-level `const X = service(...)` / `slot(...)()` declarations are
  * recognized. That is deliberate: a dependency graph declared at the top
@@ -56,10 +55,6 @@ export interface ModuleAnalysis {
 	readonly reexports: ReadonlyMap<string, ImportRef>
 	/** Sources of `export * from` statements, searched in order for names not exported otherwise. */
 	readonly stars: readonly string[]
-	/** True when the module calls `hot()` from `@doweljs/core/evolve`, which makes it where updates are accepted. */
-	readonly evolves: boolean
-	/** True when the module calls `track()` from `@doweljs/core/evolve`, showing a container in devtools. */
-	readonly tracks: boolean
 }
 
 type Node = ESTree.Node
@@ -88,7 +83,6 @@ export function analyze(id: string, code: string): ModuleAnalysis | null {
 	if (errors.length > 0) return null
 
 	const dowel = collectDowelImports(program)
-	const evolveLocals = collectEvolveImports(program)
 	const declarations: Declaration[] = []
 	const imports = new Map<string, ImportRef>()
 	const exports = new Map<string, string>()
@@ -152,27 +146,8 @@ export function analyze(id: string, code: string): ModuleAnalysis | null {
 		}
 	}
 
-	const calls = (name: string) => {
-		const local = evolveLocals.named.get(name)
-		return containsCall(program, (callee) => {
-			if (callee.type === 'Identifier') return callee.name === local
-			// `evolve.hot(…)` with `import * as evolve from '@doweljs/core/evolve'`.
-			return (
-				callee.type === 'MemberExpression' &&
-				!callee.computed &&
-				callee.object.type === 'Identifier' &&
-				evolveLocals.namespaces.has(callee.object.name) &&
-				callee.property.type === 'Identifier' &&
-				callee.property.name === name
-			)
-		})
-	}
-	const evolves = calls('hot')
-	const tracks = calls('track')
-	if (dowel.size === 0 && !evolves && !tracks && reexports.size === 0 && stars.length === 0) {
-		return null
-	}
-	return { declarations, imports, exports, reexports, stars, evolves, tracks }
+	if (dowel.size === 0 && reexports.size === 0 && stars.length === 0) return null
+	return { declarations, imports, exports, reexports, stars }
 }
 
 /** `Name` or `ns.Name`, the references a static graph can follow. */
@@ -233,29 +208,6 @@ function collectDowelImports(program: ESTree.Program): DowelImports {
 		}
 	}
 	return result
-}
-
-/** How `@doweljs/core/evolve` is imported: local names by export, and namespace imports. */
-interface EvolveImports {
-	readonly named: ReadonlyMap<string, string>
-	readonly namespaces: ReadonlySet<string>
-}
-
-function collectEvolveImports(program: ESTree.Program): EvolveImports {
-	const named = new Map<string, string>()
-	const namespaces = new Set<string>()
-	for (const statement of program.body) {
-		if (statement.type !== 'ImportDeclaration' || statement.source.value !== '@doweljs/core/evolve')
-			continue
-		for (const specifier of statement.specifiers) {
-			if (specifier.type === 'ImportSpecifier') {
-				named.set(moduleExportName(specifier.imported), specifier.local.name)
-			} else if (specifier.type === 'ImportNamespaceSpecifier') {
-				namespaces.add(specifier.local.name)
-			}
-		}
-	}
-	return { named, namespaces }
 }
 
 function declarationsOf(statement: ESTree.VariableDeclaration, dowel: DowelImports): Declaration[] {
@@ -462,23 +414,4 @@ function boundNames(pattern: ESTree.BindingPattern): string[] {
 		default:
 			return []
 	}
-}
-
-/** Whether any call expression in the tree has a callee `matches` accepts. */
-function containsCall(root: Node, matches: (callee: Node) => boolean): boolean {
-	const stack: unknown[] = [root]
-	while (stack.length > 0) {
-		const current = stack.pop()
-		if (typeof current !== 'object' || current === null) continue
-		if (Array.isArray(current)) {
-			stack.push(...current)
-			continue
-		}
-		const node = current as Node
-		if (node.type === 'CallExpression' && matches(node.callee)) return true
-		for (const [key, value] of Object.entries(node)) {
-			if (key !== 'parent' && typeof value === 'object' && value !== null) stack.push(value)
-		}
-	}
-	return false
 }

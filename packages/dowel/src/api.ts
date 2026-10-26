@@ -70,52 +70,6 @@ export interface ServiceContext {
 	 * ```
 	 */
 	readonly signal: AbortSignal
-	/**
-	 * Run an effect while the container is the active generation: from the
-	 * end of `build()`, or for a candidate from its activation. `start`
-	 * receives what this service's predecessor handed over, or `undefined`,
-	 * and may return a function that stops the effect. When a successor
-	 * activates, that function runs first and what it returns is handed to
-	 * the successor's instance of the service with the same name. It also
-	 * runs when the instance is disposed, and what it returns is then dropped.
-	 *
-	 * Start work that must not run twice here, such as consuming a queue or
-	 * listening on a port, rather than in the factory: a candidate's factories
-	 * run while its predecessor is still active. What is handed over crosses
-	 * versions of the code, so `previous` is `unknown`: check it before use.
-	 * For root-scope services only, one effect per instance, registered while
-	 * the factory runs.
-	 *
-	 * ```ts
-	 * ctx.whileActive((previous) => {
-	 *   const server = serve(handler, { socket: socketOf(previous) })
-	 *   return () => server.release()
-	 * })
-	 * ```
-	 */
-	whileActive(start: EffectStart): void
-}
-
-/** Starts an effect: see {@link ServiceContext.whileActive}. */
-export type EffectStart = (
-	previous: unknown,
-	active: ActiveContext,
-	// biome-ignore lint/suspicious/noConfusingVoidType: an effect without a stop function returns nothing, which TypeScript 5.9 types `void`.
-) => (() => unknown) | void | PromiseLike<(() => unknown) | void>
-
-/** What an effect learns about the generation it starts in. */
-export interface ActiveContext {
-	/**
-	 * The generation's number: 1 for a container `build()` returns, one more
-	 * for each successor. It only grows, so outside systems can use it to
-	 * refuse writes from a generation that was superseded.
-	 */
-	readonly generation: number
-	/**
-	 * The instance's `ctx.signal`: aborted when its disposal starts, even
-	 * while this start is still running. Pass it to slow startup work.
-	 */
-	readonly signal: AbortSignal
 }
 
 /** What a run's body receives besides the entry. */
@@ -127,13 +81,6 @@ export interface RunContext {
 	 * when this aborts.
 	 */
 	readonly signal: AbortSignal
-	/**
-	 * Aborted when a successor takes over from the container the run belongs
-	 * to. The run is not cancelled: it finishes on the generation it started
-	 * in. A long-running body may return early, so that its caller starts it
-	 * again on the successor.
-	 */
-	readonly superseded: AbortSignal
 }
 
 /** What a caller may pass a runner after the body. */
@@ -275,17 +222,8 @@ export interface Container<
 		...bindings: B
 	): Promise<Container<S, MetaOf<Sc>, Supplied | BoundNames<B>>>
 
-	/** Describe every node in the graph and the state of instances visible from here. */
+	/** Describe every node in the graph and the state of instances visible from here. Throws `DISPOSED` once the container is disposed. */
 	inspect(): readonly NodeInfo[]
-
-	/**
-	 * Aborted when a successor takes over from the generation this container
-	 * serves. An opened container stays on its generation until disposed;
-	 * reopen it to reach the successor. A root container forwards to the
-	 * latest generation, so this is the signal of the generation it serves
-	 * now: read it again after it aborts to hear of the next succession.
-	 */
-	readonly superseded: AbortSignal
 
 	/** Dispose every container and execution opened from here, then every instance, in reverse creation order. */
 	dispose(): Promise<void>

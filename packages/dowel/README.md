@@ -8,7 +8,6 @@ Type-complete dependency injection for TypeScript.
 - **Ownership is explicit.** A service disposes exactly the resources it adopts, and a resource can't have two owners.
 - **Child work is injectable.** An _execution_ hands a service a typed runner for jobs and message handlers, each run in its own short-lived container.
 - **No decorators, reflection or proxies.** Plain values, about 9 KB minified and gzipped, and a `get()` of about 40–50 ns.
-- **Evolvable.** A container built from new code can take over from a running one: work in flight finishes on the old code, new work reaches the new, and state is handed over. Vite and `bun --hot` reload this way.
 
 ```ts
 import { container, service, slot } from '@doweljs/core'
@@ -52,7 +51,7 @@ const Request = slot('Request', { scope: PerRequest })<IncomingRequest>()
 const Middleware = slot('Middleware', { many: true })<Middleware>()
 ```
 
-Names must be unique within a container. The type system identifies nodes by name, and so does a successor resolving the nodes of the containers it took over from.
+Names must be unique within a container, since the type system identifies nodes by name.
 
 ### Services
 
@@ -105,21 +104,6 @@ The factory's context mirrors `AsyncDisposableStack`:
 Only what a factory adopts is disposed. Returning a disposable value doesn't hand it to the container, and adopting a value another service already owns is an error.
 
 Disposal runs last-in-first-out, inner scopes before outer ones, one scope at a time. It waits for factories still running, so their instances are disposed before what they depend on. A factory that ignores its signal and never settles keeps disposal waiting.
-
-#### Effects
-
-A root-scope service starts what must not run twice, such as consuming a queue or listening on a port, with `ctx.whileActive(start)` rather than in its factory:
-
-```ts
-const Server = service('Server', { handler: Handler }, ({ handler }, ctx) => {
-	ctx.whileActive((previous) => {
-		const server = listen(handler, { socket: socketFrom(previous) })
-		return () => server.release()
-	})
-})
-```
-
-`start` runs once the container is built, and the function it returns runs when the instance is disposed. Its second argument carries the instance's `signal`, which aborts if the instance is disposed while `start` still runs. A stop function that throws may have left what it started running, so that effect is never started again. Factories that run while another container is still active, as a successor's do, start nothing they would have to undo: see [Evolution](#evolution). Register it while the factory runs, one effect per instance; anything else throws `INVALID_EFFECT`.
 
 ### Containers
 
@@ -253,53 +237,6 @@ Slot 'Logger' is not bound. Needed by Api → Users → Logger.
 ```
 
 Well-typed code rarely reaches them. They are a safety net for `any` and for dynamic composition.
-
-## Evolution
-
-`@doweljs/core/evolve` lets a container built from new code take over from a running one, without stopping the work in flight. Each container of such a lineage is a _generation_.
-
-```ts
-import { prepare } from '@doweljs/core/evolve'
-
-const candidate = await prepare(app, nextBuilder) // `app` keeps running meanwhile
-candidate.container.get(Health).check() // try the candidate before it takes over
-const { generation, container, retired } = await candidate.activate({ drain: 30_000 })
-```
-
-`prepare(previous, next)` builds `next` as a _candidate_. Everything `build()` would create exists, and a factory that fails rejects as `build()` does, but no effect has started and `previous` keeps serving. `discard()` disposes a candidate without activating it.
-
-`activate()` makes the candidate the active generation:
-
-1. `previous` stops its effects, newest first. What each stop function returns is its _hand-over_.
-2. The candidate starts its effects in creation order. Each `start` receives the hand-over of the service of the same name in `previous`, or `undefined`. A hand-over nothing claims passes on to the next generation.
-3. `previous` forwards whatever it is asked to the candidate, its `superseded` signal included, which is then the candidate's. `get()` and `open()` reach the candidate, by name, so code still holding `previous` or its nodes reaches the new generation. A runner taken from `previous` starts each run on whichever generation is active by then.
-4. Runs and containers opened from `previous` before that point finish on it, nested runs included: work is never split across two versions of the code. Their `superseded` signal aborts, so a long-running body can return early for its caller to start it again. Once they have finished, or after `drain` milliseconds, when what is left is cancelled, `previous` is disposed. `retired` settles when it is, and the generations still draining behind it too.
-
-`activate({ timeout })` bounds how long each effect may take to stop or start. One that overruns fails the activation the same way, and an effect that overran its stop is never started again, since it may still hold what it started. Without a limit, the default, an effect that never settles holds the activation up. If either container is disposed while this happens, the candidate does not take over: a disposed predecessor takes the candidate with it, and a disposed candidate leaves the predecessor running. If an effect of the candidate fails to start, the ones that started stop again, `previous` resumes its effects with what they handed back, the candidate is disposed, and `activate()` rejects with `ACTIVATION_FAILED`. If one of `previous`'s effects fails to stop, it resumes the same way.
-
-**Keep the container, not the services you get from it.** The container and the runners `get()` returns forward to the latest generation, but an instance `get()` returned belongs to the generation that created it. Nothing pins that generation for it, so it is disposed once its runs and opened containers have finished, and what the instance adopted, such as a connection, is closed. Call `get()` again where the instance is used, or reach it through a run.
-
-Generations are numbered: 1 for a container `build()` returns, one more for each successor, in `activation.generation` and the second argument effects receive. The number only grows, so systems outside the process can refuse writes from a generation that was superseded. Disposing any container of a lineage disposes the latest, and the generations still draining behind it.
-
-What is handed over crosses versions of the code, so `previous` is `unknown`: check its shape before use, and hand over plain data or platform objects (a socket, a child process) rather than instances of your own classes, which a reload may have evaluated again.
-
-### Reloading
-
-`hot(store, next)` builds `next` the first time a module is evaluated and has every later evaluation succeed the container built before. `store` is an object that outlives evaluations:
-
-```ts
-// Vite: @doweljs/vite accepts the update and shows failures in the error overlay.
-export const app = await hot(import.meta.hot?.data, container().provide(Server))
-
-// bun --hot, which evaluates every module again, dowel included.
-const app = await hot(globalThis, container().provide(Server))
-```
-
-Without a store, as in a production build where `import.meta.hot` is undefined, `hot()` is `next.build()`. Evaluations that overlap evolve one after the other, so two generations never run at once; each effect gets ten seconds to stop or start (`{ timeout }`), so one that never settles fails its evaluation instead of holding up every evaluation after it. If a successor fails, the running container keeps serving, `hot()` rejects, and `onHotFailure()` listeners hear of it. `release(store)` disposes what a store keeps, for a module that is dropped or evaluated from scratch. A superseded generation's runs get five seconds to finish by default (`{ drain }`), and `{ name }` keeps several applications in one store apart. `snapshot()` describes every lineage `hot()` keeps, for [`@doweljs/devtools`](../devtools); `track(app)` shows a container built otherwise there too.
-
-A successor may come from another copy of dowel, as under `bun --hot`, if `hot()` built the container it takes over from or activated it as a successor. Only the containers' public API and plain data cross between generations.
-
-Everything but effects and the `superseded` signals lives in `@doweljs/core/evolve`, so applications that never evolve bundle none of it.
 
 ## Design notes
 

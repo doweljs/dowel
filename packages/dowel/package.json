@@ -20,11 +20,6 @@
 			"@doweljs/source": "./src/index.ts",
 			"types": "./dist/index.d.ts",
 			"default": "./dist/index.js"
-		},
-		"./evolve": {
-			"@doweljs/source": "./src/evolve.ts",
-			"types": "./dist/evolve.d.ts",
-			"default": "./dist/evolve.js"
 		}
 	},
 	"files": [

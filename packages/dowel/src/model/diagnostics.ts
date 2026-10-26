@@ -138,8 +138,3 @@ export interface ScopeAboveDependencies<Scope extends string, Needed extends str
 		readonly deepestDependency: Needed
 	}
 }
-
-/** A builder passed to `prepare()` or `hot()` that cannot build yet; the property holds what `build()` reports. */
-export interface NotBuildable<Reason> {
-	readonly 'dowel: this builder cannot build yet; its build() reports why': Reason
-}

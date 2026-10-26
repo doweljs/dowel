@@ -35,23 +35,6 @@ export type DowelErrorCode =
 	| 'INVALID_NODE'
 	/** `ctx.use()` received a value without `Symbol.dispose` or `Symbol.asyncDispose`. */
 	| 'NOT_DISPOSABLE'
-	/**
-	 * A generation was superseded: the reason `superseded` signals abort with,
-	 * and what preparing or activating a successor raises once its predecessor
-	 * is no longer active, or once the candidate was activated or discarded.
-	 */
-	| 'SUPERSEDED'
-	/**
-	 * An effect could not start: one of a candidate's failed, so its
-	 * predecessor resumed and the candidate was discarded, or one that failed
-	 * to stop is not started again.
-	 */
-	| 'ACTIVATION_FAILED'
-	/**
-	 * `ctx.whileActive()` was called after its factory returned, by a service
-	 * that does not live in the root scope, or twice for one instance.
-	 */
-	| 'INVALID_EFFECT'
 
 /**
  * Every runtime failure dowel raises. Messages name the node as
@@ -70,11 +53,6 @@ export class DowelError extends Error {
 /** Formats a dependency path for error messages: `Users → Mailer → Logger`. */
 export function formatPath(path: readonly string[]): string {
 	return path.join(' → ')
-}
-
-/** One error for several failures: the failure itself when there is one, otherwise an `AggregateError`. */
-export function combine(failures: readonly unknown[], message: string): unknown {
-	return failures.length === 1 ? failures[0] : new AggregateError(failures, message)
 }
 
 /** The failures an error stands for: its members when it aggregates several, otherwise itself. */

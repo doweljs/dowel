@@ -1,8 +1,6 @@
 export type {
-	ActiveContext,
 	Container,
 	ContainerBuilder,
-	EffectStart,
 	NodeBinding,
 	NodeInfo,
 	RunContext,

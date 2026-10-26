@@ -26,12 +26,10 @@ import {
 	isCancellation,
 	markDisposed,
 } from './dispose.ts'
-import type { Generation } from './generation.ts'
 import {
 	type Chain,
 	type Child,
 	childStore,
-	detach,
 	type InstanceRecord,
 	noop,
 	notVisible,
@@ -213,7 +211,7 @@ export async function openStore(
 				} finally {
 					signal?.removeEventListener('abort', stop)
 					// Detaching only once disposed lets a parent disposed meanwhile wait for it.
-					detach(parent, opened)
+					parent.children.delete(opened)
 				}
 			})()
 			return disposal
@@ -268,8 +266,6 @@ function init(plan: CachedPlan, chain: Chain): unknown {
 		cleanups: [],
 		disposed: false,
 		controller: null,
-		effect: null,
-		constructing: true,
 	}
 	store.starting.add(record)
 	// Cached dependencies are created if nothing did yet, here or in a store above (on
@@ -321,10 +317,7 @@ function init(plan: CachedPlan, chain: Chain): unknown {
 			}
 			return track(store, plan.cell, discard(store, record, error))
 		}
-		if (!isPromiseLike(instance)) {
-			const settled = settle(store, plan.cell, record, instance)
-			return isPromiseLike(settled) ? track(store, plan.cell, Promise.resolve(settled)) : settled
-		}
+		if (!isPromiseLike(instance)) return settle(store, plan.cell, record, instance)
 		return track(
 			store,
 			plan.cell,
@@ -352,19 +345,8 @@ function construct(plan: CachedPlan, values: unknown[], ctx: ServiceContext): un
 	return plan.factory(deps, ctx)
 }
 
-/**
- * Keeps a finished instance, or disposes what it owns if its store went away
- * meanwhile. An instance created while its generation is active starts its
- * effect before anyone receives it, and fails to be created if that fails.
- */
-function settle(
-	store: Store,
-	cell: number,
-	record: InstanceRecord,
-	instance: unknown,
-	effectStarted = false,
-): unknown {
-	record.constructing = false
+/** Keeps a finished instance, or disposes what it owns if its store went away meanwhile. */
+function settle(store: Store, cell: number, record: InstanceRecord, instance: unknown): unknown {
 	store.starting.delete(record)
 	if (store.disposed) {
 		return disposeRecords([record], `'${record.plan.name}', created after disposal`).then(() => {
@@ -372,15 +354,6 @@ function settle(
 				`Service '${record.plan.name}' finished initializing after its owner was disposed.`,
 			)
 		})
-	}
-	const { effect } = record
-	if (!effectStarted && effect !== null && store.generation.live) {
-		// Starting still: a cancellation of the store aborts the signal its start receives.
-		store.starting.add(record)
-		return store.generation.start(effect).then(
-			() => settle(store, cell, record, instance, true),
-			(error: unknown) => discard(store, record, error),
-		)
 	}
 	store.cells[cell] = instance
 	if (store.pending !== null) store.pending[cell] = undefined
@@ -508,18 +481,11 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 class BodyContext implements RunContext {
 	private controller: AbortController | null = null
 	private unfollow = noop
-	private generation: Generation | null
 
 	constructor(
 		private store: Store | null,
 		private readonly name: string,
-	) {
-		this.generation = store?.generation ?? null
-	}
-
-	get superseded(): AbortSignal {
-		return this.generation?.superseded ?? new AbortController().signal
-	}
+	) {}
 
 	get signal(): AbortSignal {
 		if (this.controller === null) {
@@ -536,7 +502,6 @@ class BodyContext implements RunContext {
 	settle(): void {
 		this.unfollow()
 		this.store = null
-		this.generation = null
 	}
 }
 

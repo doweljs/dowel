@@ -178,7 +178,7 @@ describe('nested scopes', () => {
 	})
 
 	test('two distinct scopes with one lineage are rejected when the container is built', async () => {
-		// Declarations compare scopes by lineage, since a successor accepts scopes earlier code still holds.
+		// Declarations compare scopes by lineage, since a module evaluated twice declares a scope twice.
 		const A = scope('x')
 		const B = scope('x')
 		const Ta = slot('Ta', { scope: A })<number>()

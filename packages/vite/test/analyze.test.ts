@@ -41,7 +41,6 @@ export { Internal as Hidden }
 		expect(byLocal.get('Internal')).toMatchObject({ kind: 'service', scope: null })
 		expect(result!.imports.get('Db')).toEqual({ source: './db', imported: 'Db' })
 		expect(result!.exports.get('Hidden')).toBe('Internal')
-		expect(result!.evolves).toBe(false)
 	})
 
 	test('extracts scopes and executions', () => {
@@ -81,52 +80,6 @@ export const notANode = service('X', () => 1)
 `,
 		)
 		expect(result!.declarations.map((d) => d.name)).toEqual(['A', 'T'])
-	})
-
-	test('finds the modules that keep a container evolving with hot()', () => {
-		const root = analyze(
-			'/app/main.ts',
-			`import { container } from '@doweljs/core'
-import { hot as evolving } from '@doweljs/core/evolve'
-export const app = await evolving(import.meta.hot?.data, container())
-`,
-		)
-		expect(root!.evolves).toBe(true)
-
-		const importsOnly = analyze(
-			'/app/reexport.ts',
-			`import { hot } from '@doweljs/core/evolve'
-export const keep = hot
-`,
-		)
-		expect(importsOnly).toBeNull()
-
-		const builds = analyze(
-			'/app/build.ts',
-			`import { container } from '@doweljs/core'
-export const app = await container().build()
-`,
-		)
-		expect(builds!.evolves).toBe(false)
-
-		const tracked = analyze(
-			'/app/tracked.ts',
-			`import { container } from '@doweljs/core'
-import { track } from '@doweljs/core/evolve'
-const app = await container().build()
-track(app)
-`,
-		)
-		expect(tracked).toMatchObject({ evolves: false, tracks: true })
-
-		const namespaced = analyze(
-			'/app/namespaced.ts',
-			`import { container } from '@doweljs/core'
-import * as evolve from '@doweljs/core/evolve'
-export const app = await evolve.hot(import.meta.hot?.data, container())
-`,
-		)
-		expect(namespaced).toMatchObject({ evolves: true, tracks: false })
 	})
 
 	test('ignores modules that do not import dowel', () => {

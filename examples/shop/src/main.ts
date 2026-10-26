@@ -1,5 +1,4 @@
 import { bind } from '@doweljs/core'
-import { hot } from '@doweljs/core/evolve'
 import { appBuilder } from './container'
 import { CatalogService, ProductRepository } from './domain/catalog'
 import { NotificationService } from './domain/notifications'
@@ -27,18 +26,24 @@ const approveAll: PaymentGateway = {
 	}),
 }
 
-// Every edit evaluates this module again, and the container built from the
-// edited code takes over from the one running.
-const app = await hot(
-	import.meta.hot?.data,
-	appBuilder({
-		env: 'development',
-		databaseUrl: 'memory://shop',
-		stripeKey: 'sk_live_demo',
-		smtpHost: 'smtp.example',
-		currency: 'USD',
-	}).override(PaymentGateway, approveAll),
-)
+const app = await appBuilder({
+	env: 'development',
+	databaseUrl: 'memory://shop',
+	stripeKey: 'sk_live_demo',
+	smtpHost: 'smtp.example',
+	currency: 'USD',
+})
+	.override(PaymentGateway, approveAll)
+	.build()
+
+// Every edit evaluates this module again: the container built before is
+// disposed, and the edited code builds the next one. The devtools see each.
+if (import.meta.hot) {
+	const { track } = await import('@doweljs/devtools/client')
+	track(app)
+	import.meta.hot.accept()
+	import.meta.hot.dispose(() => app.dispose())
+}
 
 await app.get(ProductRepository).seed([
 	{ id: 'p_tee', name: 'T-shirt', priceCents: 2500, stock: 10 },

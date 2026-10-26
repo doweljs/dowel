@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { bind, container, scope, service, slot } from '../src/index.ts'
+import { bind, container, type DowelError, scope, service, slot } from '../src/index.ts'
 import { Logger, memoryLogger, PerRequest, Request } from './support.ts'
 
 describe('inspect', () => {
@@ -49,5 +49,15 @@ describe('inspect', () => {
 		const byName = new Map(child.inspect().map((node) => [node.name, node]))
 		expect(byName.get('ReqSvc')!.status).toBe('ready')
 		expect(byName.get('SideSvc')!.status).toBeNull()
+	})
+
+	test('a disposed container no longer describes instances', async () => {
+		const One = service('One', () => 1)
+		const app = await container().provide(One).build()
+		expect(app.inspect().map((node) => node.status)).toEqual(['ready'])
+		await app.dispose()
+		expect(() => app.inspect()).toThrow(
+			expect.objectContaining({ code: 'DISPOSED' } satisfies Partial<DowelError>),
+		)
 	})
 })
