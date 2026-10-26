@@ -1,18 +1,12 @@
 /**
- * Runtime representation of graph nodes.
- *
- * Public types (`Scope`, `Slot`, `Service`, `Execution`, `Binding`) are plain
- * interfaces; the runtime data lives behind the `internal` symbol so it stays
- * out of hovers and autocompletion while remaining inspectable in a debugger.
+ * Runtime graph nodes, kept behind the `internal` symbol of the public
+ * carriers so they stay out of hovers and autocompletion.
  */
 
 import type { ServiceContext } from '../api.ts'
 import type { Deps } from '../model/declarations.ts'
 
-/**
- * Local to this copy of dowel: ids and `ROOT` are per copy too, so nodes from
- * another copy must not pass for ours.
- */
+/** Local to this copy of dowel, as ids and `ROOT` are, so another copy's nodes cannot pass for ours. */
 export const internal: unique symbol = Symbol('dowel.internal')
 
 let nextId = 0

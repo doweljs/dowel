@@ -4,11 +4,7 @@ import { DowelError, errorsOf, withCleanupFailures } from '../errors.ts'
 import { cancelStore } from './cancel.ts'
 import { clearStore, type InstanceRecord, type Store } from './store.ts'
 
-/**
- * Runs the records' disposers last-in-first-out, collecting failures. Each
- * resource is released from the ownership set once its disposer ran, so a
- * later instance may adopt it again.
- */
+/** Runs the records' disposers last-in-first-out, collecting failures, and releases each resource for later adoption. */
 export async function disposeRecords(
 	records: readonly InstanceRecord[],
 	what: string,
@@ -39,14 +35,9 @@ export async function disposeRecords(
 }
 
 /**
- * Disposes a store: first what it owns (opened containers and runs, newest first,
- * one after another), then the initializations still in flight, then its
- * own instances. The store is marked disposed before anything runs, so
- * nothing new can be resolved from it meanwhile and instances that finish
- * initializing dispose themselves (and are waited for). Every run and
- * starting factory beneath it is aborted before any is waited for, so work
- * that waits on other work all hears of the disposal. It is cleared whatever
- * happens; every failure is collected and thrown together.
+ * Children newest first, then in-flight initializations, then instances last
+ * in first out. Cancelled before anything is awaited, so everything beneath
+ * hears of it; failures are thrown together.
  */
 export async function disposeStore(store: Store, what: string): Promise<void> {
 	store.disposed = true
@@ -100,11 +91,7 @@ export type Cancelled =
 const disposal: Cancelled = { kind: 'disposal' }
 const cancellations = new WeakMap<object, Cancelled>()
 
-/**
- * An error that only reports a cancellation, such as the reason a signal
- * aborts with. Reported after the failure or disposal that caused it, it
- * adds nothing.
- */
+/** An error that only reports a cancellation, such as a signal's reason; it adds nothing to what caused it. */
 export function cancellation(
 	message: string,
 	cancelled: Cancelled = disposal,
@@ -124,11 +111,7 @@ export function isCancellation(error: unknown): boolean {
 	return cancelledBy(error) !== undefined
 }
 
-/**
- * Rethrows `error`, the failure of some work, as `reword(first)` when the
- * first failure it stands for is a cancellation, keeping the others as
- * cleanup failures of `what`; any other failure is rethrown as it is.
- */
+/** Rethrows `error` as `reword(first)` when its first failure is a cancellation, keeping the rest as cleanup failures of `what`. */
 export function rewordCancellation(
 	error: unknown,
 	reword: (cancelled: unknown) => unknown,

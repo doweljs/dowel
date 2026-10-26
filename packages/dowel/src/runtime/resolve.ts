@@ -1,8 +1,6 @@
 /**
- * Resolving plans against a chain of stores: creating cached instances,
- * opening containers and running executions. They share a module because they
- * recurse into each other: a run opens a container, whose initialization creates
- * instances, whose dependencies may be other executions.
+ * Resolving plans against a chain of stores: creating instances, opening
+ * containers and running executions, which recurse into each other.
  */
 
 import type { RunContext, ServiceContext } from '../api.ts'
@@ -63,12 +61,9 @@ export function resolve(plan: Plan, chain: Chain): unknown {
 }
 
 /**
- * Initializes a scope's cached plans in dependency order, and what they reach
- * above it that nothing created yet. Independent async factories start
- * concurrently. The first failure, synchronous or not, stops what has not
- * started and aborts the signals of what is still running; once everything
- * started has settled, it is thrown with what later failures add, and the
- * caller disposes what was created.
+ * Initializes a scope's cached plans in dependency order, concurrently where
+ * independent. The first failure stops what has not started and aborts what
+ * is running; it is thrown once everything started has settled.
  */
 export async function initialize(order: readonly CachedPlan[], chain: Chain): Promise<void> {
 	const store = chain[chain.length - 1]!
@@ -118,12 +113,7 @@ function abortReason(signal: AbortSignal): unknown {
 	return signal.reason ?? new DOMException('This operation was aborted', 'AbortError')
 }
 
-/**
- * What `waiter`'s store waits for while `plan` is created. A store above
- * shares what it creates, so a waiter that stops starting services stops
- * waiting for it instead of cancelling it, and leaves it to the store that
- * owns it.
- */
+/** `promise`, until `waiter` is cancelled: a creation in a store above is shared, so a waiter leaves it running. */
 function joined<T>(promise: Promise<T>, plan: CachedPlan, waiter: Store): Promise<T> {
 	if (plan.scope === waiter.scope) return promise
 	const reason = (): unknown =>
@@ -136,11 +126,7 @@ function joined<T>(promise: Promise<T>, plan: CachedPlan, waiter: Store): Promis
 	})
 }
 
-/**
- * The first failure in time, which is the cause, with what later failures
- * add: their own errors and cleanup failures, but neither the cancellations
- * the first caused nor the same error again as a dependent reported it.
- */
+/** The first failure, with what later ones add: not the cancellations it caused, nor itself reported again by a dependent. */
 function initializationError(failures: readonly unknown[]): unknown {
 	const [first, ...later] = failures
 	const seen = new Set<unknown>(errorsOf(first))
@@ -170,11 +156,9 @@ export interface OpenOptions {
 }
 
 /**
- * Opens a store at `scopePlan` under the last store of `chain`: supplies the
- * bindings, registers it with its parent and initializes what `needs` lists.
- * Its cancellation follows its parent's, so it is born cancelled under a
- * cancelled one. On failure the store is disposed before the promise rejects;
- * cancelled while it opens, it rejects with why.
+ * Opens a store under the last of `chain`: supplies the bindings, registers it
+ * with its parent and initializes `needs`. On failure or cancellation it is
+ * disposed before the promise rejects.
  */
 export async function openStore(
 	chain: Chain,
@@ -415,13 +399,10 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 	}
 	const signal = signalOption(name, options)
 	const bindings = inputBindings(plan, values)
-	// The parent owns the run, not just its container: disposing the parent cancels the run and
-	// waits for the body before the run's container, and then the parent, are disposed. The body
-	// counts as running from just before it is called, so one that starts disposing its owner
-	// synchronously is still waited for.
+	// The parent owns the run: its disposal waits for the body, which counts as running from just
+	// before it is called.
 	let phase: 'opening' | Promise<void> | 'settled' = 'opening'
-	// Why the body never started: a disposal or a failure above, worded for this run, or the
-	// reason its caller cancelled it with.
+	// Why the body never started, worded for this run.
 	const notStarted = (reason: unknown): unknown => {
 		const by = cancelledBy(reason)
 		if (by === undefined) return reason
@@ -474,10 +455,9 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 }
 
 /**
- * What a run's body receives besides the entry. Its signal follows the run's
- * cancellation until the body settles, after which disposing the run's
- * container is the run finishing; it is created only if read. Once settled,
- * it lets go of the run, so a body that keeps it keeps nothing else alive.
+ * What a run's body receives besides the entry. Its signal, created only if
+ * read, follows the run's cancellation until the body settles, then lets go of
+ * the run.
  */
 class BodyContext implements RunContext {
 	private controller: AbortController | null = null
@@ -513,10 +493,7 @@ function runReason(name: string, reason: unknown): unknown {
 	return cancellation(`Execution '${name}' is being disposed.`, by, { cause: reason })
 }
 
-/**
- * The `signal` a run was called with, checked by shape rather than class, so
- * that a signal from another realm or a polyfill works too.
- */
+/** The `signal` a run was called with, checked by shape so another realm's or a polyfill's works. */
 function signalOption(name: string, options: unknown): AbortSignal | undefined {
 	if (options === undefined) return undefined
 	if (typeof options === 'object' && options !== null) {

@@ -23,23 +23,15 @@ type CheckScope<D extends Deps, Sc extends AnyScope> = InferredScope<D>['name'] 
 	: ScopeAboveDependencies<MetaOf<Sc>['name'], InferredScope<D>['name']>
 
 export interface ServiceOptions<D extends Deps, Sc extends AnyScope> {
-	/**
-	 * Keep the instance in a deeper scope than its dependencies imply, for
-	 * example one unit of work per request although it only needs the
-	 * database. By default a service lives in the deepest scope among its
-	 * dependencies: at the container when they are all root-scope.
-	 */
+	/** A deeper scope than the dependencies imply, such as one unit of work per request. Default: the deepest dependency's. */
 	readonly scope?: Sc & DeclaredScope<Sc> & CheckScope<D, Sc>
 }
 
 type ExplicitScope<Sc extends AnyScope> = [Sc] extends [never] ? never : MetaOf<Sc>
 
 /**
- * Declare a concrete service.
- *
- * Dependencies are declared as values, so the service's requirements and
- * scope are inferred and checked by the compiler. One instance exists per
- * container, or per container opened for the service's scope.
+ * Declare a service. Its dependencies are values, so its requirements and
+ * scope are inferred; one instance exists per container of its scope.
  *
  * ```ts
  * const Users = service('Users', { db: Db, log: Logger }, ({ db, log }) => ({

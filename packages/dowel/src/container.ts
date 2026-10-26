@@ -1,8 +1,4 @@
-/**
- * The container builder. Builders are persistent: every operation returns a
- * new builder and leaves the original untouched, so a base composition can
- * be shared across tests or environments and extended independently.
- */
+/** The container builder. Persistent: every operation returns a new builder. */
 
 import type { Container, ContainerBuilder } from './api.ts'
 import { type Composition, compile } from './compile/compile.ts'

@@ -1,12 +1,7 @@
 /**
- * Turns a composition (roots, bindings, contributions and overrides) into
- * plans.
- *
- * Compilation walks the graph from the roots, validates it (unbound slots,
- * captive dependencies, cycles, duplicate names, scope mismatches, execution
- * inputs) and produces one `Plan` per reached node, allocating each cached
- * plan a cell in the stores of its scope. Bindings that nothing reaches are
- * never compiled, so they never activate.
+ * Turns a composition into plans: a walk from the roots that validates the
+ * graph and gives each reached node a plan, and each cached one a cell in the
+ * stores of its scope. What nothing reaches is never compiled.
  */
 
 import { DowelError, formatPath } from '../errors.ts'
@@ -460,13 +455,10 @@ class Compiler {
 	}
 
 	/**
-	 * What a run at `scope` needs to resolve `entry`: the entry itself, whose
-	 * creation creates what it reaches, in the run's store and, if nothing
-	 * did yet, in the stores above; and the scoped slots of the run's scope it
-	 * reaches through required dependencies. Nested runs create what their
-	 * own entries reach, but a nested execution whose scopes open at `scope`
-	 * or above resolves its slots from the run's store, so it is followed for
-	 * those.
+	 * What a run at `scope` needs: its entry, and the scoped slots of `scope`
+	 * reached through required dependencies. A nested execution opening at
+	 * `scope` or above resolves its slots from the run's store, so it is
+	 * followed for those; one opening below creates its own.
 	 */
 	private needsOf(entry: Plan, scope: ScopePlan): ScopeNeeds {
 		const { depth } = scope.scope
