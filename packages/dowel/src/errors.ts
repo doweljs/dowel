@@ -36,10 +36,7 @@ export type DowelErrorCode =
 	/** `ctx.use()` received a value without `Symbol.dispose` or `Symbol.asyncDispose`. */
 	| 'NOT_DISPOSABLE'
 
-/**
- * Every runtime failure dowel raises. Messages name the node as
- * `Kind 'name'`, state the problem, and end with the remedy when there is one.
- */
+/** Every runtime failure dowel raises. Messages name the node as `Kind 'name'`, state the problem, then the remedy. */
 export class DowelError extends Error {
 	override readonly name = 'DowelError'
 	readonly code: DowelErrorCode
@@ -70,12 +67,7 @@ export async function failuresOf(cleanup: () => Promise<void>): Promise<unknown[
 	}
 }
 
-/**
- * The error failed work (a construction, unless `what` names it) rejects
- * with once its cleanup ran: the original failure when cleanup succeeded,
- * otherwise an `AggregateError` with the original failure first and the
- * cleanup failures after it.
- */
+/** The failure of `what`, with any cleanup failures after it in an `AggregateError`. */
 export function withCleanupFailures(
 	error: unknown,
 	cleanupFailures: readonly unknown[],

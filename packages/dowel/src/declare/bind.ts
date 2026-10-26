@@ -6,10 +6,8 @@ import { assertImplScope } from '../nodes/hierarchy.ts'
 import { type BindingNode, internal } from '../nodes/node.ts'
 
 /**
- * Bind a slot to an implementation: either a value or a service whose
- * instance type satisfies the slot. For a multi-binding slot, each call
- * contributes one item. Bound values are borrowed: the container never
- * disposes them.
+ * Bind a slot to a value or a service, or contribute one item to a
+ * multi-binding. Bound values are borrowed: the container never disposes them.
  *
  * ```ts
  * container().provide(bind(Logger, PinoLogger), bind(Config, { port: 3000 }))

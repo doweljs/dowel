@@ -1,9 +1,6 @@
-/**
- * How scopes relate. A scope is the object `scope()` returned: two
- * declarations are two scopes, and two distinct scopes sharing a name are
- * rejected wherever they meet, since one of them is a duplicate.
- */
+/** How scopes relate. A scope is the object `scope()` returned; two sharing a name are rejected wherever they meet. */
 
+import type { scope } from '../declare/scope.ts'
 import { DowelError } from '../errors.ts'
 import type { ImplNode, ScopeNode } from './node.ts'
 
@@ -22,13 +19,12 @@ export function deeper(a: ScopeNode, b: ScopeNode): ScopeNode | null {
 }
 
 /**
- * Rejects two distinct scopes that share a name, among `a`, `b` and their
- * ancestors, which `subject` brought together. Called where a check between
- * two scopes failed: a namesake is then the problem to report, since no
- * message about how the two relate would make sense.
+ * Rejects two distinct scopes sharing a name among `a`, `b` and their
+ * ancestors. Called where a check between the two failed, since a namesake
+ * is then the problem to report.
+ * @see {@link scope}, which keeps a chain's names unique, so one entry per name covers it.
  */
 export function assertDistinctNames(a: ScopeNode, b: ScopeNode, subject: string): void {
-	// A chain never repeats a name (see `scope()`), so one entry per name covers it.
 	const byName = new Map<string, ScopeNode>()
 	for (let current: ScopeNode | null = a; current !== null; current = current.parent) {
 		byName.set(current.name, current)
@@ -44,10 +40,7 @@ export function assertDistinctNames(a: ScopeNode, b: ScopeNode, subject: string)
 	}
 }
 
-/**
- * A service may only stand in for a node (implement a slot, contribute to a
- * multi-binding, override a node) if it lives in that node's scope or above.
- */
+/** A service standing in for a node (binding, contribution, override) must live in its scope or above. */
 export function assertImplScope(
 	target: { readonly name: string; readonly scope: ScopeNode },
 	impl: ImplNode,

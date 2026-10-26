@@ -1,10 +1,6 @@
 /**
- * The graph record and its algebra.
- *
- * A container's graph is a record keyed by node name. Declarations, bindings
- * and overrides each contribute entries, merged by {@link MergeGraph}; every
- * question a container answers (what is missing, what is reachable, which
- * execution lacks inputs) is a walk over that record.
+ * The graph record, keyed by node name, that declarations, bindings and
+ * overrides contribute entries to; every check is a walk over it.
  */
 
 /**

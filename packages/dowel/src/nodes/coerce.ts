@@ -1,8 +1,4 @@
-/**
- * Turns the values users pass (slots, services, bindings, dependency records)
- * into the runtime nodes behind them, rejecting anything else with a message
- * that says what was expected.
- */
+/** The runtime nodes behind the values users pass, with a message naming what was expected otherwise. */
 
 import { DowelError } from '../errors.ts'
 import type { AnySlot, Dep, Optional } from '../model/declarations.ts'
