@@ -1,20 +1,13 @@
 /**
- * Cancelling a store and everything opened beneath it: its starting factories,
- * what it waits for in stores above, the runs it owns, and so on down. The
- * state lives on the stores, and the walk follows the children each store
- * already keeps for disposal, so a run costs nothing extra; a store opened
- * under a cancelled one is born cancelled. It is the subset of
- * `AbortController` the runtime needs: what users see stays a real
- * `AbortSignal`, created from it only when read.
+ * Cancelling a store and everything beneath it. The state lives on the stores
+ * and the walk follows the children they keep for disposal, so a run costs
+ * nothing extra. The subset of `AbortController` the runtime needs; users
+ * get a real `AbortSignal`, created only when read.
  */
 
 import { noop, type Store } from './store.ts'
 
-/**
- * Cancels a store and what is opened beneath it, once, synchronously.
- * `why` makes the reason when something first reads it, once for everything
- * this cancellation reaches. Listeners must not throw.
- */
+/** Cancels a store and what is beneath it, once, synchronously. `why` makes the reason on first read. Listeners must not throw. */
 export function cancelStore(store: Store, why: () => unknown): void {
 	if (store.cancelled) return
 	let made = false

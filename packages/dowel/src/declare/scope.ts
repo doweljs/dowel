@@ -7,17 +7,12 @@ import { allocateId, internal, ROOT, type ScopeNode } from '../nodes/node.ts'
 
 /**
  * Declare a scope: a lifetime shorter than the container's, such as one
- * request. Scopes nest: a scope's parent is the scope whose containers open
- * it. Without a parent, a scope sits directly under the container's own
- * `root` scope.
+ * request, opened from containers of its parent (`root` without one).
  *
  * ```ts
  * export const Session = scope('session')
  * export const Request = scope('request', Session)
  * ```
- *
- * A slot declared in a scope is supplied when a container for that scope is
- * opened, and every service depending on it lives in that scope.
  */
 export function scope<N extends string>(
 	name: ScopeName<N>,

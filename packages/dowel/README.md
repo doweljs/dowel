@@ -2,12 +2,12 @@
 
 Type-complete dependency injection for TypeScript.
 
-- **The compiler checks completeness.** A container can't be built while a slot it needs is unbound, can't be opened without its scope's values, and can't resolve a node it can't see. These are type errors that name what is missing and who needs it.
-- **Async only at the edges.** `build()` and `open()` return promises; `get()` never does. Independent async services start concurrently, and a failed build disposes what it already created.
-- **Scope is inferred.** Depend on a request-scoped slot and your service lives per request too. Capturing a shorter-lived value in a longer-lived service is a compile error.
-- **Ownership is explicit.** A service disposes exactly the resources it adopts, and a resource can't have two owners.
-- **Child work is injectable.** An _execution_ hands a service a typed runner for jobs and message handlers, each run in its own short-lived container.
-- **No decorators, reflection or proxies.** Plain values, about 9 KB minified and gzipped, and a `get()` of about 40–50 ns.
+- **The compiler checks completeness.** A container can't be built with a slot unbound, opened without its scope's values, or asked for a node it can't see. The type errors name what is missing and who needs it.
+- **Async only at the edges.** `build()` and `open()` return promises; `get()` never does. Independent async services start concurrently.
+- **Scope is inferred.** Depend on a request-scoped slot and your service lives per request. Capturing a shorter-lived value in a longer-lived service is a compile error.
+- **Ownership is explicit.** A service disposes exactly what it adopts, and a resource has one owner.
+- **Child work is injectable.** An _execution_ hands a service a typed runner; each run gets its own short-lived container.
+- **No decorators, reflection or proxies.** About 9 KB minified and gzipped; `get()` takes about 40 ns.
 
 ```ts
 import { container, service, slot } from '@doweljs/core'
@@ -31,13 +31,11 @@ app.get(Users).list()
 await app.dispose()
 ```
 
-Remove `.bind(Logger, …)` and `build()` stops being callable. Its type becomes `MissingBindings<{ Logger: "Users" }>`: the missing slot, and what needs it.
+Remove `.bind(Logger, …)` and `build()` stops being callable: its type becomes `MissingBindings<{ Logger: "Users" }>`.
 
-## Concepts
+## Slots
 
-### Slots
-
-A slot is a named gap the container fills: a name and a type, with no implementation. Slots are the only open points in a graph; everything else is wired automatically.
+A slot is a named, typed gap the container fills. Slots are the only open points in a graph; everything else is wired automatically.
 
 ```ts
 // Bound once per container.
@@ -51,11 +49,11 @@ const Request = slot('Request', { scope: PerRequest })<IncomingRequest>()
 const Middleware = slot('Middleware', { many: true })<Middleware>()
 ```
 
-Names must be unique within a container, since the type system identifies nodes by name.
+Names are unique within a container: the type system identifies nodes by name.
 
-### Services
+## Services
 
-A service lists its dependencies as values. Its requirements, its scope and whether it is async are all inferred from them.
+A service lists its dependencies as values. Its requirements, its scope and whether it is async follow from them.
 
 ```ts
 const Users = service(
@@ -73,7 +71,7 @@ const Users = service(
 )
 ```
 
-The service's type carries its whole subgraph. Hover `Users` to see the record the compiler reasons about:
+Hover `Users` to see the graph the compiler reasons about:
 
 ```ts
 Service<UsersApi, {
@@ -88,24 +86,20 @@ Service<UsersApi, {
 }>
 ```
 
-A service has one instance per container of its scope: one in the app's container for root-scope services, one in each opened container for scoped ones. There are no other lifetimes.
+A service has one instance per container of its scope. The only option, `scope`, places a service deeper than its dependencies imply, such as one unit of work per request although it only needs the database; shallower is a compile error.
 
-The only option is `scope`. It places a service deeper than its dependencies imply, such as one unit of work per request although it only needs the database. Placing it shallower is a compile error.
-
-#### Resources and disposal
+### Resources and disposal
 
 The factory's context mirrors `AsyncDisposableStack`:
 
 - `ctx.use(resource)` adopts a `Disposable` or `AsyncDisposable` and returns it.
-- `ctx.adopt(value, dispose)` adopts anything else, with the function that disposes it.
+- `ctx.adopt(value, dispose)` adopts anything else, with its disposer.
 - `ctx.defer(fn)` runs a callback at disposal.
-- `ctx.signal` aborts when the instance's disposal starts, even if its factory is still running. Pass it to slow startup work: `connect(url, { signal: ctx.signal })`.
+- `ctx.signal` aborts when the instance's disposal starts, even while its factory still runs. Pass it to slow startup work: `connect(url, { signal: ctx.signal })`.
 
-Only what a factory adopts is disposed. Returning a disposable value doesn't hand it to the container, and adopting a value another service already owns is an error.
+Only what a factory adopts is disposed; adopting what another service owns is an error. Disposal runs last-in-first-out, inner scopes before outer ones, and waits for factories still running.
 
-Disposal runs last-in-first-out, inner scopes before outer ones, one scope at a time. It waits for factories still running, so their instances are disposed before what they depend on. A factory that ignores its signal and never settles keeps disposal waiting.
-
-### Containers
+## Containers
 
 ```ts
 const app = await container()
@@ -118,11 +112,11 @@ const app = await container()
 	.build()
 ```
 
-What you `provide()` are the container's roots. What they reach outside an execution is created at `build()`; what only an execution reaches is created by the first run that needs it (see [Executions](#executions)), and nothing else is created at all. A binding alone activates nothing: `bind(Cache, RedisCache)` only takes effect once something reachable depends on `Cache`, or `Cache` itself is provided.
+`provide()` names the roots. What they reach outside an execution is created at `build()`; what only an execution reaches is created by the first run that needs it (see [Executions](#executions)). A binding takes effect only once something reachable depends on its slot.
 
-If a factory fails, `build()` disposes what it already created, then rejects. Failures during that cleanup are attached to the original error as an `AggregateError`.
+If a factory fails, `build()` disposes what it created and rejects; cleanup failures ride along in an `AggregateError`.
 
-Builders are persistent: every call returns a new builder, so a base composition can be shared between tests or environments. Write reusable composition functions generic in the state, so they apply anywhere in a chain:
+Builders are persistent: every call returns a new builder. Write reusable compositions generic in the state, so they apply anywhere in a chain:
 
 ```ts
 const infrastructure = <S extends ContainerState>(b: ContainerBuilder<S>) =>
@@ -140,11 +134,11 @@ app.get(Current) // error: NotVisible<"Current", "request">
 app.get(Smtp) // error: CreatedOnDemand<"Smtp">, reached only through an execution
 ```
 
-Overrides are exact. Override `Db` with a fake, and nothing that only `Db` needed is required any more; `get(Db)` returns the fake.
+Overrides are exact: override `Db` with a fake, and nothing that only `Db` needed is required any more.
 
-### Scopes and containers
+## Scopes
 
-A scope is a lifetime shorter than the app's, such as one request. `open()` creates a child container for a scope, and you pass the scope's slots their values as bindings. The graph decides which values are required, so a missing one is a compile error naming the slot and what needs it.
+A scope is a lifetime shorter than the app's, such as one request. `open()` creates a child container for it, with the scope's slots bound to values; a missing value is a compile error naming the slot and what needs it.
 
 ```ts
 await using request = await app.open(PerRequest, bind(Request, req))
@@ -152,11 +146,11 @@ request.get(CurrentUser) // created once per opened container
 request.get(Users) // root-scope services are shared
 ```
 
-**Always dispose what `open()` returns**, with `await using` or in a `finally`. A container keeps every container opened from it until they are disposed, so that disposing the app can still close them. One dropped without being disposed stays in memory, with everything it created, until its parent is disposed.
+**Always dispose what `open()` returns**, with `await using` or in a `finally`. A container keeps what it opened until that is disposed, so a dropped one lives on until its parent is disposed.
 
-What the provided nodes reach in a scope, outside an execution, is created when its container opens, not when first resolved; that is what keeps `get()` synchronous. Keep factories in short-lived scopes cheap, and free of side effects a request may not need. What only an execution reaches is created by the first run that needs it (see [Executions](#executions)).
+What the roots reach in a scope is created when its container opens, which is what keeps `get()` synchronous. Keep scoped factories cheap.
 
-Scopes nest. Declare them as values, give slots a scope, and open containers one scope at a time:
+Scopes nest:
 
 ```ts
 export const Session = scope('session')
@@ -175,13 +169,11 @@ session.get(Handler)   // error: NotVisible<"Handler", "request">
 app.open(Request, …)   // error: NotChildScope<"request", "root">
 ```
 
-A service lives in the deepest scope among its dependencies. Dependencies on different branches, such as a request-scope slot and a job-scope slot, are rejected where the service is declared.
+A service lives in the deepest scope among its dependencies; dependencies on different branches are rejected where it is declared. Declare each scope once and import it where it is used: two scopes sharing a name are rejected wherever they meet.
 
-A scope is the object `scope()` returned: declare each once and import it where it is used. Two distinct scopes sharing a name are rejected wherever they meet, so one can't be opened or bound in the other's place.
+## Executions
 
-### Executions
-
-Work a service starts and finishes on its own, such as a job, a message handler or a connection, is declared as an execution. It names a scope, an entry node in that scope or above, and the inputs each run supplies. Services depend on it like anything else and receive a runner.
+Work a service starts and finishes on its own, such as a job or a message handler, is an execution: a scope, an entry in that scope or above, and the inputs each run supplies. Dependents receive a runner.
 
 ```ts
 const Job = scope('job')
@@ -197,21 +189,15 @@ const Scheduler = service('Scheduler', { runJob: RunJob }, ({ runJob }) => ({
 }))
 ```
 
-Each call to the runner:
+Each run opens a container for the scope with the given inputs, hands the entry to the body, and disposes the container once the body settles. An execution without inputs takes only the body. `build()` isn't callable while the inputs don't cover what the entry needs: `IncompleteExecutions<{ RunJob: "Other" }>`.
 
-1. opens a container for the execution's scope, with the inputs it was given;
-2. resolves the entry and hands it to the body;
-3. disposes the container once the body settles, whether it returned or threw.
+What the entry reaches above the run's scope, and nothing provided reaches, is created by the first run that needs it, shared with later runs and disposed with its scope; a failed creation is retried on the next demand. `get()` refuses such a service with `CREATED_ON_DEMAND`; provide it to create it with the container.
 
-What the entry reaches in the scopes above the run's, and that nothing provided reaches outside an execution, is created on demand: the first run that needs it creates it, in the store of the scope it lives in, which shares it with later runs and disposes it with itself. Concurrent runs share one creation, and one that fails is created again on the next demand, so a misconfigured service fails the runs that need it rather than `build()`. `get()` can't return such a service, and throws `CREATED_ON_DEMAND`; provide it to create it with the container, and to have `build()` fail fast when it can't start.
+A run belongs to the container its runner was resolved from. Disposing that container aborts the `signal` the body receives as its second argument, waits for the body to settle, then disposes the run. Every run beneath is aborted before any is waited for, so runs that wait on each other don't deadlock. A run whose owner is disposed before its body starts rejects with `DISPOSED`.
 
-The runner takes an object with a value for each input, typed from `inputs`. An execution without inputs takes only the body. `build()` isn't callable while the inputs don't cover what the entry needs: `IncompleteExecutions<{ RunJob: "Other" }>`.
+A caller cancels a run with `{ signal }` after the body, as in `runJob({ job }, body, { signal: AbortSignal.timeout(5_000) })`. Aborted before the body starts, the run disposes what it created and rejects with the signal's reason; aborted while the body runs, the body's `signal` aborts with that reason and the run settles as the body does. A run started beneath a cancelled one never runs its body.
 
-A run belongs to the container its runner was resolved from. Disposing that container aborts the `signal` the body receives as its second argument, as in `runJob({ job }, (runner, { signal }) => runner.run(signal))`. It then waits for the body to settle before disposing the run's container and its own instances, so a body never sees what it uses closed beneath it. A body that ignores the signal keeps disposal waiting. Disposal aborts every run beneath the container, in opened containers and nested runs included, before it waits for any of them, so a run that waits on another during shutdown doesn't deadlock. A run whose disposal, or its owner's, starts before its body does never starts the body, and rejects with `DISPOSED`.
-
-A caller cancels a run by passing a `signal` after the body, as in `runJob({ job }, body, { signal: request.signal })` or `{ signal: AbortSignal.timeout(5_000) }`. Aborted before the body starts, the run starts no more factories in its scope, aborts the `ctx.signal` of those still running, disposes what it created and rejects with the signal's reason. What it was waiting for in the scopes above keeps going for whoever shares it. Aborted while the body runs, it aborts the body's `signal` with the same reason, and the runs it opened beneath it too; the run still waits for the body and settles as the body does, so a body can return partial results or throw `signal.reason`. A run started beneath a cancelled one is cancelled from the start and never runs its body, so a body that needs to clean up after an abort does it itself, or in `ctx.defer`.
-
-### Multi-bindings
+## Multi-bindings
 
 ```ts
 const Middleware = slot('Middleware', { many: true })<Middleware>()
@@ -222,26 +208,24 @@ const Server = service('Server', { middleware: Middleware }, ({ middleware }) =>
 container().provide(Server).contribute(Middleware, Auth).contribute(Middleware, Cors).build()
 ```
 
-Contributions resolve to a readonly array, in the order they were contributed. A multi-binding never needs binding: with no contributions it resolves to `[]`. Contributing a service brings that service's own requirements into the container. `override()` on a multi-binding replaces the whole set.
+Contributions resolve to a readonly array, in order; with none, to `[]`. `override()` on a multi-binding replaces the whole set.
 
-### Introspection
+## Introspection
 
-`app.inspect()` and `request.inspect()` describe every node: its scope, dependencies, binding and instance status.
+`inspect()` describes every node: its scope, dependencies, binding and instance status.
 
 ## Errors
 
-Runtime errors are `DowelError`s with a stable `code`, such as `UNBOUND_SLOT`, `CAPTIVE_DEPENDENCY`, `CYCLE`, `INVALID_SCOPE` or `DISPOSED`. Messages include the dependency path:
+Runtime errors are `DowelError`s with a stable `code`, such as `UNBOUND_SLOT`, `CAPTIVE_DEPENDENCY`, `CYCLE` or `DISPOSED`, and name the dependency path:
 
 ```text
 Slot 'Logger' is not bound. Needed by Api → Users → Logger.
 ```
 
-Well-typed code rarely reaches them. They are a safety net for `any` and for dynamic composition.
+Well-typed code rarely reaches them; they are the safety net for `any` and dynamic composition.
 
-## Design notes
+## Notes
 
-- **Cycles can't be declared.** Dependencies are values, and a `const` can't reference a later one. A cycle can only come from binding a slot to a service that depends on it, from `override()`, or from an execution whose entry reaches the service that runs it. All three are detected at build; the first two are also type errors, which `build()` reports.
-- **Type-level cost.** The model is checked against a generated graph of 300 services in ten layers, 144 of them reachable from the roots (`test/types/scale.test-d.ts`). Checking the whole package takes about five seconds on TypeScript 5.9 and four to eight on TypeScript 7, mostly in that test. Builder types stay short because each step is an interface instantiation, not an expanded record.
-- **TypeScript 5.9 or later.** Earlier versions, checked down to 5.5, accept small graphs but stop with "type instantiation is excessively deep" on one that size.
-- **Declaration emit.** Builder steps over a generic state stay named (`Provide<Provide<S, A>, B>`) instead of expanding the merged graph, so libraries can export generic composition functions with declarations. The types an exported service, builder or container is inferred from are exported for the same reason.
-- **Literal types.** TypeScript keeps the literal return types of nested functions during generic inference: `service('S', () => ({ kind: () => 'a' }))` infers `() => "a"`. Annotate the return type when you want a wider one. This is how inference works, not something dowel does.
+- **Cycles** can only come from a binding, an override or an execution whose entry reaches the service that runs it. All are rejected at build; the first two by the types too.
+- **TypeScript 5.9 or later** is required.
+- **Literal types.** TypeScript keeps nested functions' literal return types under inference: `service('S', () => ({ kind: () => 'a' }))` infers `() => "a"`. Annotate the return type when you want a wider one.

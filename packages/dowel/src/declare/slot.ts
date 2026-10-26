@@ -12,26 +12,16 @@ export type SlotAt<T, N extends string, Sc extends ScopeDescriptor, Many extends
 >
 
 export interface SlotOptions {
-	/**
-	 * The scope the slot lives in. A scoped slot is supplied each time a
-	 * container for its scope is opened, and every service depending on it
-	 * lives in that scope. Root when omitted: bound once, at build().
-	 */
+	/** The scope the slot lives in and is supplied for at `open()`; root, bound at `build()`, when omitted. */
 	readonly scope?: AnyScope
-	/**
-	 * Collect every contribution made to the slot into a readonly array, in
-	 * contribution order. A multi-binding never needs binding; with no
-	 * contributions it resolves to `[]`.
-	 */
+	/** Collect every contribution into a readonly array, `[]` when there is none. */
 	readonly many?: true
 }
 
 /**
- * `unknown` when the types can tell what the slot is from its options: each
- * one certainly given or certainly absent, with `scope` one
- * declared scope. Anything less (an optional property, a union with and
- * without it, an object typed `{}` that may hold either) would type the slot
- * as root and single-valued while it runs in a scope or collects an array.
+ * `unknown` when each option is certainly given or certainly absent, with
+ * `scope` one declared scope. Anything less would type the slot as root and
+ * single-valued while it runs in a scope or collects an array.
  */
 type ReadableOptions<N extends string, O extends SlotOptions> = [
 	Has<O, 'scope'> | Has<O, 'many'>,
@@ -58,9 +48,7 @@ type OptionScope<O extends SlotOptions> = O extends { readonly scope: infer Sc e
 type OptionMany<O extends SlotOptions> = O extends { readonly many: true } ? true : false
 
 /**
- * Declare a slot: a named capability whose implementation or value is
- * chosen when the container is built, or supplied when a container for its
- * scope is opened.
+ * Declare a slot: a named gap filled at `build()`, or at `open()` for its scope.
  *
  * ```ts
  * const Logger = slot('Logger')<{ info(message: string): void }>()
@@ -83,10 +71,7 @@ export function slot(name: string, options?: SlotOptions): () => unknown {
 	return () => declared as AnySlot
 }
 
-/**
- * Depend on a slot without requiring it to be bound. The factory receives
- * `undefined` when no binding exists.
- */
+/** Depend on a slot without requiring it bound; the factory receives `undefined` when it is not. */
 export function optional<G extends AnySlot>(target: G): Optional<G> {
 	slotNode(target)
 	return Object.freeze({ '~kind': 'optional', slot: target })
