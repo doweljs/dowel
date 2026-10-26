@@ -1,5 +1,22 @@
 # @doweljs/core
 
+## 0.4.0
+
+### Minor Changes
+
+- 540bd10: breaking: discontinue `@doweljs/vite` and `@doweljs/devtools`
+- 540bd10: breaking: remove hot replacement (`@doweljs/core/hot`); a running application is rebuilt by its platform, not in place
+- 603fc86: breaking: compare scopes by identity, reject two distinct scopes sharing a name wherever they meet, and refuse a scope named like one above it
+
+### Patch Changes
+
+- 540bd10: fix: say when a service adopts one resource twice, instead of blaming another service
+- 540bd10: fix: throw `DISPOSED` from `inspect()` on a disposed container, as `get()` and `open()` do
+- 540bd10: fix: return the same slot from the function `slot()` returns, however often it is called
+- 540bd10: fix: reject `open()` when the container it opens from is disposed while its factories run
+- 540bd10: fix: refuse `get()`, `open()` and `inspect()` as soon as a container's disposal starts
+- 540bd10: fix: reject a value supplied to `open()` for a slot that only shares the name of the one the graph reaches
+
 ## 0.3.0
 
 ### Minor Changes
