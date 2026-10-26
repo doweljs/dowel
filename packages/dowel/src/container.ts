@@ -5,7 +5,7 @@
  */
 
 import type { Container, ContainerBuilder } from './api.ts'
-import type { Composition } from './compile/compile.ts'
+import { type Composition, compile } from './compile/compile.ts'
 import type { Compiled } from './compile/plan.ts'
 import { DowelError } from './errors.ts'
 import type { EmptyState } from './model/state.ts'
@@ -13,7 +13,6 @@ import { declaredNode, implOf, nodeOf, slotNode } from './nodes/coerce.ts'
 import { assertImplScope } from './nodes/lineage.ts'
 import { describe, type ImplNode, type SlotNode } from './nodes/node.ts'
 import { RootContainer } from './runtime/containers.ts'
-import { compileWithHooks } from './runtime/hooks.ts'
 
 const EMPTY: Composition = {
 	roots: [],
@@ -21,6 +20,9 @@ const EMPTY: Composition = {
 	contributions: new Map(),
 	overrides: new Map(),
 }
+
+/** How `evolve.ts` builds a candidate from a builder of this copy of dowel. */
+const prepareCandidate: unique symbol = Symbol('dowel.prepareCandidate')
 
 class Builder {
 	constructor(private readonly composition: Composition) {}
@@ -83,17 +85,28 @@ class Builder {
 		return compose(this)
 	}
 
+	/** Builds a candidate: everything `build()` creates, with no effect started. */
+	[prepareCandidate](): Promise<RootContainer> {
+		return this.create(false)
+	}
+
 	/** A field, so a detached `build` still works. */
-	readonly build = (): Promise<Container> => {
-		const { composition } = this
+	readonly build = (): Promise<Container> => this.create(true)
+
+	private create(activate: boolean): Promise<RootContainer> {
 		let compiled: Compiled
 		try {
-			compiled = compileWithHooks(composition)
+			compiled = compile(this.composition)
 		} catch (error) {
 			return Promise.reject(error)
 		}
-		return RootContainer.create(composition, compiled)
+		return RootContainer.create(compiled, activate)
 	}
+}
+
+/** The candidate a builder of this copy of dowel builds, or `null` for anything else. */
+export function buildCandidate(builder: unknown): Promise<RootContainer> | null {
+	return builder instanceof Builder ? builder[prepareCandidate]() : null
 }
 
 function withBinding(composition: Composition, slot: SlotNode, impl: ImplNode): Composition {

@@ -26,12 +26,13 @@ import {
 	isCancellation,
 	markDisposed,
 } from './dispose.ts'
-import { hooks } from './hooks.ts'
+import type { Generation } from './generation.ts'
 import {
 	type Chain,
 	type Child,
+	childStore,
+	detach,
 	type InstanceRecord,
-	newStore,
 	noop,
 	notVisible,
 	type Store,
@@ -192,7 +193,7 @@ export async function openStore(
 	}
 	if (signal?.aborted) throw abortReason(signal)
 	const parent = chain[chain.length - 1]!
-	const store = newStore(scopePlan.scope, scopePlan.cells, parent.owned, parent)
+	const store = childStore(scopePlan.scope, scopePlan.cells, parent)
 	supply(scopePlan, store, bindings, needs.required)
 	const stop = (): void => cancelStore(store, () => abortReason(signal!))
 	signal?.addEventListener('abort', stop)
@@ -212,7 +213,7 @@ export async function openStore(
 				} finally {
 					signal?.removeEventListener('abort', stop)
 					// Detaching only once disposed lets a parent disposed meanwhile wait for it.
-					parent.children.delete(opened)
+					detach(parent, opened)
 				}
 			})()
 			return disposal
@@ -267,6 +268,8 @@ function init(plan: CachedPlan, chain: Chain): unknown {
 		cleanups: [],
 		disposed: false,
 		controller: null,
+		effect: null,
+		constructing: true,
 	}
 	store.starting.add(record)
 	// Cached dependencies are created if nothing did yet, here or in a store above (on
@@ -299,10 +302,6 @@ function init(plan: CachedPlan, chain: Chain): unknown {
 		abandon(store, record)
 		throw error
 	}
-	// A replaced generation may still be creating it; the factory runs once that settled, however.
-	const predecessor = store.predecessors?.[plan.cell]
-	if (predecessor !== undefined) waiting.push(predecessor.then(noop, noop))
-
 	const create = (): unknown => {
 		// Its dependencies may have settled after a sibling's failure cancelled the store.
 		if (store.cancelled) {
@@ -322,7 +321,10 @@ function init(plan: CachedPlan, chain: Chain): unknown {
 			}
 			return track(store, plan.cell, discard(store, record, error))
 		}
-		if (!isPromiseLike(instance)) return settle(store, plan.cell, record, instance)
+		if (!isPromiseLike(instance)) {
+			const settled = settle(store, plan.cell, record, instance)
+			return isPromiseLike(settled) ? track(store, plan.cell, Promise.resolve(settled)) : settled
+		}
 		return track(
 			store,
 			plan.cell,
@@ -350,8 +352,19 @@ function construct(plan: CachedPlan, values: unknown[], ctx: ServiceContext): un
 	return plan.factory(deps, ctx)
 }
 
-/** Keeps a finished instance, or disposes what it owns if its store went away meanwhile. */
-function settle(store: Store, cell: number, record: InstanceRecord, instance: unknown): unknown {
+/**
+ * Keeps a finished instance, or disposes what it owns if its store went away
+ * meanwhile. An instance created while its generation is active starts its
+ * effect before anyone receives it, and fails to be created if that fails.
+ */
+function settle(
+	store: Store,
+	cell: number,
+	record: InstanceRecord,
+	instance: unknown,
+	effectStarted = false,
+): unknown {
+	record.constructing = false
 	store.starting.delete(record)
 	if (store.disposed) {
 		return disposeRecords([record], `'${record.plan.name}', created after disposal`).then(() => {
@@ -359,6 +372,15 @@ function settle(store: Store, cell: number, record: InstanceRecord, instance: un
 				`Service '${record.plan.name}' finished initializing after its owner was disposed.`,
 			)
 		})
+	}
+	const { effect } = record
+	if (!effectStarted && effect !== null && store.generation.live) {
+		// Starting still: a cancellation of the store aborts the signal its start receives.
+		store.starting.add(record)
+		return store.generation.start(effect).then(
+			() => settle(store, cell, record, instance, true),
+			(error: unknown) => discard(store, record, error),
+		)
 	}
 	store.cells[cell] = instance
 	if (store.pending !== null) store.pending[cell] = undefined
@@ -397,14 +419,9 @@ function track(store: Store, cell: number, promise: Promise<unknown>): Promise<u
 /** The function a dependent receives for an execution, bound to the stores down to the execution's scope. */
 function runner(plan: ExecutionPlan, chain: Chain): (...args: unknown[]) => Promise<unknown> {
 	const baseLength = plan.scope.depth + 1
-	let base: Chain = chain.slice(0, baseLength)
+	const base: Chain = chain.slice(0, baseLength)
 	if (base.length < baseLength) notVisible(plan.name, plan.scope)
-	// Remembered, so a long-lived runner follows each hot replacement once.
-	let current = plan
-	return async (...args) => {
-		;[current, base] = hooks.follow(current, base)
-		return run(current, base, args)
-	}
+	return (...args) => run(plan, base, args)
 }
 
 /** Runs once under `base`: opens the run's container, hands the entry to the body, and disposes the container. */
@@ -491,11 +508,18 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 class BodyContext implements RunContext {
 	private controller: AbortController | null = null
 	private unfollow = noop
+	private generation: Generation | null
 
 	constructor(
 		private store: Store | null,
 		private readonly name: string,
-	) {}
+	) {
+		this.generation = store?.generation ?? null
+	}
+
+	get superseded(): AbortSignal {
+		return this.generation?.superseded ?? new AbortController().signal
+	}
 
 	get signal(): AbortSignal {
 		if (this.controller === null) {
@@ -512,6 +536,7 @@ class BodyContext implements RunContext {
 	settle(): void {
 		this.unfollow()
 		this.store = null
+		this.generation = null
 	}
 }
 

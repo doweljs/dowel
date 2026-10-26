@@ -5,7 +5,7 @@
 
 import type { NodeBinding, NodeInfo } from '@doweljs/core'
 import type { Graph, GraphEdge, GraphNode } from '@doweljs/vite'
-import type { ReportedContainer } from '../src/protocol.ts'
+import type { ReportedLineage } from '../src/protocol.ts'
 
 /** A node as static analysis found it, with its instance in the selected container, if any. */
 export interface Node {
@@ -60,7 +60,7 @@ const HUB_MIN = 3
 /** Slots, services and executions share one name space, as they do at runtime. */
 const NAMED_KINDS = ['service', 'slot', 'execution'] as const
 
-export function buildModel(graph: Graph, container: ReportedContainer | null): Model {
+export function buildModel(graph: Graph, container: ReportedLineage | null): Model {
 	const live = new Map<string, NodeInfo>()
 	for (const node of container?.nodes ?? []) live.set(`${node.kind}:${node.name}`, node)
 

@@ -11,7 +11,7 @@
 		"customConditions": ["@doweljs/source"],
 		"paths": {
 			"@doweljs/core": ["../../packages/dowel/src/index.ts"],
-			"@doweljs/core/hot": ["../../packages/dowel/src/hot.ts"]
+			"@doweljs/core/evolve": ["../../packages/dowel/src/evolve.ts"]
 		}
 	},
 	"include": ["src", "test", "vite.config.ts"]

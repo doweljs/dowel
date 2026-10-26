@@ -1,5 +1,5 @@
 /**
- * Polling every environment for its containers. Each poll sends one
+ * Polling every environment for the applications `hot()` keeps there. Each poll sends one
  * numbered inspection request and collects the answers quoting it for a
  * short window; a late answer to an earlier poll is ignored, and a closed
  * tab drops out.
@@ -9,7 +9,7 @@ import type { DevEnvironment } from 'vite'
 import {
 	INSPECT,
 	type InspectMessage,
-	type ReportedContainer,
+	type ReportedLineage,
 	STATE,
 	type State,
 	type StateMessage,
@@ -46,7 +46,7 @@ export class Inspector {
 	}
 
 	/**
-	 * Asks every client for its containers. The answer comes once as many
+	 * Asks every client for its lineages. The answer comes once as many
 	 * clients answered as last time, or when the window closes; either way the
 	 * window runs to its end, so a tab that opened since is counted next time.
 	 */
@@ -90,17 +90,17 @@ export class Inspector {
 }
 
 /**
- * Groups answers by environment. Containers are told apart by the client
- * they run in (`2.1`), which stays the same for as long as it is connected.
+ * Groups answers by environment. Lineages are told apart by the client they
+ * run in (`2.1`), which stays the same for as long as it is connected.
  */
 function byEnvironment(answers: Iterable<Answer>): State {
-	const state: Record<string, ReportedContainer[]> = {}
+	const state: Record<string, ReportedLineage[]> = {}
 	for (const { client, message } of answers) {
-		const containers = message.containers.map(
-			(container): ReportedContainer =>
-				client === null ? container : { ...container, id: `${client}.${container.id}` },
+		const lineages = message.lineages.map(
+			(lineage): ReportedLineage =>
+				client === null ? lineage : { ...lineage, id: `${client}.${lineage.id}` },
 		)
-		state[message.environment] = [...(state[message.environment] ?? []), ...containers]
+		state[message.environment] = [...(state[message.environment] ?? []), ...lineages]
 	}
 	return state
 }

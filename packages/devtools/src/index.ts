@@ -1,7 +1,7 @@
 /**
  * `@doweljs/devtools`: a page on the Vite dev server showing dowel's
- * dependency graph and the live state of every container in every
- * environment. It draws the graph `@doweljs/vite` knows from static
+ * dependency graph and the live state of every application `hot()` keeps,
+ * in every environment. It draws the graph `@doweljs/vite` knows from static
  * analysis, so that plugin is required too.
  *
  * ```ts
@@ -16,7 +16,7 @@ import type { Plugin, ResolvedConfig } from 'vite'
 import { CLIENT_MODULE, clientModule } from './client.ts'
 import { installDevtools } from './server.ts'
 
-export type { ReportedContainer, State } from './protocol.ts'
+export type { ReportedLineage, State } from './protocol.ts'
 
 export interface DevtoolsOptions {
 	/** Path of the page on the dev server. Default: `/__dowel`. */

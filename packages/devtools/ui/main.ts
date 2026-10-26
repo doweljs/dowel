@@ -5,7 +5,7 @@
 
 import './style.css'
 import type { Graph } from '@doweljs/vite'
-import type { ReportedContainer, State } from '../src/protocol.ts'
+import type { ReportedLineage, State } from '../src/protocol.ts'
 import { layout } from './layout.ts'
 import { buildModel, type Model, viewModel } from './model.ts'
 import { detailsHtml, escapeHtml, graphSvg, listHtml, options } from './render.ts'
@@ -38,11 +38,11 @@ let renderedKey = ''
 let selectorsKey = ''
 const view = new View(page.canvas, page.graph)
 
-function containers(): readonly ReportedContainer[] {
+function containers(): readonly ReportedLineage[] {
 	return selectedEnvironment === null ? [] : (state[selectedEnvironment] ?? [])
 }
 
-function selectedSnapshot(): ReportedContainer | null {
+function selectedSnapshot(): ReportedLineage | null {
 	const all = containers()
 	return all.find((container) => String(container.id) === selectedContainer) ?? all[0] ?? null
 }
@@ -57,7 +57,7 @@ function renderSelectors(): void {
 	}
 	const choices = containers().map((container) => ({
 		value: String(container.id),
-		label: `container #${container.id}${container.status.state === 'failed' ? ' (replacement failed)' : ''}`,
+		label: `app #${container.id} · generation ${container.generation}${container.retiring.length > 0 ? ` · ${container.retiring.length} draining` : ''}${container.failure === null ? '' : ' · update failed'}`,
 	}))
 	if (selectedContainer === null || !choices.some((choice) => choice.value === selectedContainer)) {
 		selectedContainer = choices[0]?.value ?? null
@@ -76,7 +76,7 @@ function renderSelectors(): void {
 		selectedEnvironment,
 		'no environment',
 	)
-	page.container.innerHTML = options(choices, selectedContainer, 'no container')
+	page.container.innerHTML = options(choices, selectedContainer, 'no app')
 	page.warnings.textContent =
 		graph.duplicates.length > 0
 			? `Duplicate names: ${graph.duplicates.map((duplicate) => duplicate.id).join(', ')}`

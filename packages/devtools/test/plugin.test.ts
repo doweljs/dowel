@@ -26,7 +26,7 @@ async function start(): Promise<Harness> {
 		server: { middlewareMode: true, ws: false },
 		resolve: {
 			alias: [
-				{ find: /^@doweljs\/core\/hot$/, replacement: `${dowelSrc}/hot.ts` },
+				{ find: /^@doweljs\/core\/evolve$/, replacement: `${dowelSrc}/evolve.ts` },
 				{ find: /^@doweljs\/core$/, replacement: `${dowelSrc}/index.ts` },
 			],
 		},
@@ -90,11 +90,11 @@ describe('@doweljs/devtools', () => {
 		])
 	})
 
-	test("reports each environment's live containers", async () => {
+	test('reports the applications hot() keeps in each environment', async () => {
 		const state = (await fetch(`${url}/__dowel/state.json`).then((r) => r.json())) as State
-		const [container] = state['ssr'] ?? []
-		expect(container?.status).toEqual({ state: 'current', error: null })
-		expect(container?.nodes.map((node) => [node.name, node.status])).toEqual([
+		const [lineage] = state['ssr'] ?? []
+		expect(lineage).toMatchObject({ generation: 1, failure: null, retiring: [] })
+		expect(lineage?.nodes.map((node) => [node.name, node.status])).toEqual([
 			['Db', 'ready'],
 			['Users', 'ready'],
 		])

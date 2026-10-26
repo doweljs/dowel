@@ -25,6 +25,23 @@ await app.dispose()
 const expected = JSON.stringify(['/a', 42, ['db']])
 const actual = JSON.stringify([...results, closed])
 if (actual !== expected) throw new Error(`Expected ${expected}, got ${actual}`)
-// The hot subpath resolves too; importing it last keeps hot replacement out of the run above.
-const hot = await import('@doweljs/core/hot')
-if (typeof hot.update !== 'function') throw new Error('@doweljs/core/hot does not export update()')
+
+// A successor takes over, with what its predecessor's effect handed over.
+const { prepare } = await import('@doweljs/core/evolve')
+const port = (tag) =>
+	service('Port', (ctx) => {
+		ctx.whileActive((previous) => {
+			closed.push(`${tag} from ${previous}`)
+			return () => tag
+		})
+		return tag
+	})
+const first = await container().provide(port('first')).build()
+const { container: second, generation } = await (
+	await prepare(first, container().provide(port('second')))
+).activate()
+const evolved = JSON.stringify([generation, first.get(port('any')), closed.slice(1)])
+await second.dispose()
+if (evolved !== JSON.stringify([2, 'second', ['first from undefined', 'second from first']])) {
+	throw new Error(`Evolution went wrong: ${evolved}`)
+}

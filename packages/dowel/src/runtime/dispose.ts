@@ -1,4 +1,4 @@
-/** Disposal of instances and stores, shared by the runtime and hot replacement. */
+/** Disposal of instances and stores. */
 
 import { DowelError, errorsOf } from '../errors.ts'
 import { cancelStore } from './cancel.ts'

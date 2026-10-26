@@ -48,13 +48,6 @@ export interface Composition {
 	readonly overrides: ReadonlyMap<SlotNode | ServiceNode, ImplNode>
 }
 
-/** Maps a node to the one that should stand in for it (used by hot replacement). */
-export type Canonicalize = <N extends DeclaredNode | ScopeNode>(node: N) => N
-
-export interface CompileOptions {
-	readonly canonical?: Canonicalize
-}
-
 /** A scope plan while compilation still adds to it. */
 interface ScopeDraft extends ScopePlan {
 	cells: number
@@ -65,19 +58,17 @@ interface ScopeDraft extends ScopePlan {
 	readonly needs: { readonly order: CachedPlan[]; readonly required: Set<string> }
 }
 
-const identity: Canonicalize = (node) => node
-
-export function compile(composition: Composition, options: CompileOptions = {}): Compiled {
-	return new Compiler(composition, options.canonical ?? identity).compile()
+export function compile(composition: Composition): Compiled {
+	return new Compiler(composition).compile()
 }
 
 class Compiler {
 	private readonly plans = new Map<number, Plan>()
 	private readonly graph: GraphNode[] = []
 	private readonly scopes = new Map<string, ScopeDraft>()
-	private readonly roots: DeclaredNode[]
-	private readonly bindings = new Map<SlotNode, ImplNode>()
-	private readonly contributions = new Map<SlotNode, ImplNode[]>()
+	private readonly roots: readonly DeclaredNode[]
+	private readonly bindings: Map<SlotNode, ImplNode>
+	private readonly contributions: ReadonlyMap<SlotNode, readonly ImplNode[]>
 	/** Multi-binding slots whose whole set an override replaces. */
 	private readonly manyOverrides = new Map<SlotNode, ImplNode>()
 	private readonly serviceOverrides = new Map<ServiceNode, ImplNode>()
@@ -90,22 +81,12 @@ class Compiler {
 	private readonly path: string[] = []
 	private readonly visiting = new Set<number>()
 
-	constructor(
-		composition: Composition,
-		private readonly canonical: Canonicalize,
-	) {
-		this.roots = composition.roots.map(canonical)
-		for (const [slot, impl] of composition.bindings) {
-			this.bindings.set(canonical(slot), this.canonicalImpl(impl))
-		}
-		for (const [slot, impls] of composition.contributions) {
-			this.contributions.set(
-				canonical(slot),
-				impls.map((impl) => this.canonicalImpl(impl)),
-			)
-		}
+	constructor(composition: Composition) {
+		this.roots = composition.roots
+		this.bindings = new Map(composition.bindings)
+		this.contributions = composition.contributions
 		for (const [target, replacement] of composition.overrides) {
-			this.registerOverride(canonical(target), this.canonicalImpl(replacement))
+			this.registerOverride(target, replacement)
 		}
 		this.scopeDraft(ROOT)
 	}
@@ -173,8 +154,7 @@ class Compiler {
 		}
 	}
 
-	private scopeDraft(scope: ScopeNode): ScopeDraft {
-		const node = this.canonical(scope)
+	private scopeDraft(node: ScopeNode): ScopeDraft {
 		const existing = this.scopes.get(node.name)
 		if (existing !== undefined) {
 			if (existing.scope !== node) {
@@ -196,10 +176,6 @@ class Compiler {
 		}
 		this.scopes.set(node.name, draft)
 		return draft
-	}
-
-	private canonicalImpl(impl: ImplNode): ImplNode {
-		return impl.kind === 'value' ? impl : { kind: 'service', service: this.canonical(impl.service) }
 	}
 
 	private claimName(node: DeclaredNode): void {
@@ -249,9 +225,8 @@ class Compiler {
 	/** The overridden node stays resolvable and visible, pointing at its replacement. */
 	private buildOverride(declared: ServiceNode, override: ImplNode): Plan {
 		this.appliedOverrides.add(declared)
-		const scope = this.canonical(declared.scope)
-		const plan = this.planImpl(declared.name, scope, override)
-		this.record(declared, scope, plan, [], implInfo(override))
+		const plan = this.planImpl(declared.name, declared.scope, override)
+		this.record(declared, declared.scope, plan, [], implInfo(override))
 		return plan
 	}
 
@@ -279,7 +254,7 @@ class Compiler {
 			return existing
 		}
 		return this.visit(slot, () => {
-			const scope = this.canonical(slot.scope)
+			const { scope } = slot
 			const { plan, binding, deps } = slot.many
 				? this.buildMany(slot, scope)
 				: this.buildSlot(slot, scope, optional)
@@ -375,14 +350,13 @@ class Compiler {
 	}
 
 	private buildExecution(declared: ExecutionNode): ExecutionPlan {
-		const child = this.canonical(declared.scope)
-		// The child's parent link may predate a re-declaration of the parent scope.
-		const parent = this.canonical(child.parent ?? ROOT)
+		const child = declared.scope
+		const parent = child.parent ?? ROOT
 		const childDraft = this.scopeDraft(child)
-		const inputs = declared.inputs.map(({ key, slot }) => ({ key, slot: this.canonical(slot) }))
+		const { inputs } = declared
 		const slots = inputs.map((input) => input.slot)
 		this.assertUnbound(declared, slots)
-		const entryNode = this.canonical(declared.entry)
+		const entryNode = declared.entry
 		const entry = this.planNode(entryNode, false)
 		if (!isAtOrAbove(entry.scope, child)) {
 			const [runs, lives] = scopeNames(child, entry.scope)
@@ -396,7 +370,6 @@ class Compiler {
 
 		const plan: ExecutionPlan = {
 			kind: 'execution',
-			id: declared.id,
 			name: declared.name,
 			scope: parent,
 			deps: [{ key: 'entry', plan: entry, optional: false }],
@@ -427,12 +400,12 @@ class Compiler {
 	}
 
 	private buildService(node: ServiceNode): Plan {
-		const scope = this.canonical(node.scope)
+		const { scope } = node
 		const deps: PlanDep[] = []
 		const edges: { key: string; id: number }[] = []
 		for (const [key, dep] of Object.entries(node.deps)) {
 			const dependency = dependencyOf(dep)
-			const target = this.canonical(dependency.node)
+			const target = dependency.node
 			const plan = this.planNode(target, dependency.optional)
 			if (!isAtOrAbove(plan.scope, scope)) {
 				const [lives, depends] = scopeNames(scope, plan.scope)

@@ -10,8 +10,8 @@ import type { ServiceContext } from '../api.ts'
 import type { Deps } from '../model/declarations.ts'
 
 /**
- * Local to this copy of dowel: ids, `ROOT` and the hot-replacement state are
- * per copy too, so nodes from another copy must not pass for ours.
+ * Local to this copy of dowel: ids and `ROOT` are per copy too, so nodes from
+ * another copy must not pass for ours. Only a successor accepts them, by name.
  */
 export const internal: unique symbol = Symbol('dowel.internal')
 

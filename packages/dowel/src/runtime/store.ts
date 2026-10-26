@@ -1,12 +1,13 @@
 /**
  * Instance storage. Every container owns one store: the container `build()`
- * returns for scope `root`, and each opened container for its scope. A resolution sees a chain of stores, indexed by
- * scope depth.
+ * returns for scope `root`, and each opened container for its scope. A
+ * resolution sees a chain of stores, indexed by scope depth.
  */
 
 import type { CachedPlan } from '../compile/plan.ts'
 import { DowelError } from '../errors.ts'
-import type { ScopeNode } from '../nodes/node.ts'
+import { ROOT, type ScopeNode } from '../nodes/node.ts'
+import type { Effect, Generation } from './generation.ts'
 
 export const UNSET: unique symbol = Symbol('dowel.unset')
 
@@ -23,8 +24,7 @@ interface Cleanup {
 
 /** Disposal bookkeeping for one instance. */
 export interface InstanceRecord {
-	/** Re-pointed by hot replacement when the instance is carried into a new generation. */
-	plan: CachedPlan
+	readonly plan: CachedPlan
 	/** The container-wide ownership set its resources are registered in. */
 	readonly owned: WeakSet<object>
 	readonly cleanups: Cleanup[]
@@ -32,6 +32,10 @@ export interface InstanceRecord {
 	disposed: boolean
 	/** Behind `ctx.signal`, created on first use; aborted when disposal of the instance starts. */
 	controller: AbortController | null
+	/** What `ctx.whileActive()` registered, if anything: one effect per instance. */
+	effect: Effect | null
+	/** Until its factory has returned, or settled: the only time it may register an effect. */
+	constructing: boolean
 }
 
 /** Something a store owns and disposes before itself: an opened container or a running execution. */
@@ -44,15 +48,10 @@ export interface Child {
 export interface Store {
 	readonly scope: ScopeNode
 	readonly cells: unknown[]
+	/** The generation of the container the chain belongs to, shared by every store in it. */
+	readonly generation: Generation
 	/** In-flight initializations, by cell. Allocated on first async init. */
 	pending: (Promise<unknown> | undefined)[] | null
-	/**
-	 * Creations of replaced generations still in flight, by cell: one here
-	 * waits for its predecessor to settle first, so the two never run at once.
-	 * Set by hot replacement at the commit, so what the proposal created at
-	 * startup is not covered.
-	 */
-	predecessors: (Promise<unknown> | undefined)[] | null
 	/** Instances whose factory has not settled yet; their signals abort when the store is cancelled. */
 	readonly starting: Set<InstanceRecord>
 	/**
@@ -73,6 +72,8 @@ export interface Store {
 	readonly records: InstanceRecord[]
 	/** Scopes and executions opened from this store, disposed before it. */
 	readonly children: Set<Child>
+	/** Called once the last child detaches; set by a superseded container waiting for its work to drain. */
+	drained: (() => void) | null
 	/** Every resource adopted anywhere in the container, to reject double ownership. */
 	readonly owned: WeakSet<object>
 	disposed: boolean
@@ -81,27 +82,44 @@ export interface Store {
 /** The stores a resolution can see: index `d` is the store at depth `d`. */
 export type Chain = readonly Store[]
 
-/** A store under `parent`, if any: born cancelled if `parent` is. */
-export function newStore(
+/** The store of a container that `build()` or a candidate creates. */
+export function rootStore(size: number, generation: Generation): Store {
+	return store(ROOT, size, generation, new WeakSet(), null)
+}
+
+/** A store opened under `parent`: born cancelled if `parent` is. */
+export function childStore(scope: ScopeNode, size: number, parent: Store): Store {
+	return store(scope, size, parent.generation, parent.owned, parent)
+}
+
+function store(
 	scope: ScopeNode,
 	size: number,
+	generation: Generation,
 	owned: WeakSet<object>,
 	parent: Store | null,
 ): Store {
 	return {
 		scope,
 		cells: new Array(size).fill(UNSET),
+		generation,
 		pending: null,
-		predecessors: null,
 		starting: new Set(),
 		cancelled: parent?.cancelled ?? false,
 		why: parent?.why ?? null,
 		cancelListeners: null,
 		records: [],
 		children: new Set(),
+		drained: null,
 		owned,
 		disposed: false,
 	}
+}
+
+/** Forgets a child once it is disposed, and tells whoever waits for the store to drain. */
+export function detach(store: Store, child: Child): void {
+	store.children.delete(child)
+	if (store.children.size === 0) store.drained?.()
 }
 
 /** Forgets every instance. Disposal must have happened already. */

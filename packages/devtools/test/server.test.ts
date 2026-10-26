@@ -35,8 +35,8 @@ function fakeServer(answer: (reply: Reply, request: number) => void) {
 			send: (event: string, { request }: { request: number }) => {
 				if (event !== 'dowel:inspect') return
 				answer((tab, quoted = request) => {
-					const containers = [{ id: (tab as { container?: number }).container ?? 1, nodes: [] }]
-					listeners.get('dowel:state')!({ request: quoted, environment: 'client', containers }, tab)
+					const lineages = [{ id: (tab as { container?: number }).container ?? 1, nodes: [] }]
+					listeners.get('dowel:state')!({ request: quoted, environment: 'client', lineages }, tab)
 				}, request)
 			},
 		},

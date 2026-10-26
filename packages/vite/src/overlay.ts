@@ -1,12 +1,12 @@
 /**
- * Hot replacement failures in Vite's error overlay. The injected code reports
- * a failed update over its environment's hot channel; the plugin shows it in
+ * Failed evolutions in Vite's error overlay. The injected code reports a
+ * failed `hot()` over its environment's hot channel; the plugin shows it in
  * the browser, whichever environment it came from.
  */
 
 import type { ViteDevServer } from 'vite'
 
-/** The event injected code sends when an update fails. */
+/** The event injected code sends when `hot()` fails. */
 export const HOT_ERROR = 'dowel:error'
 
 export interface HotErrorMessage {

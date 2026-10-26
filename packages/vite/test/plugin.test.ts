@@ -8,6 +8,12 @@ import type { ModuleRunner } from 'vite/module-runner'
 import dowel, { type DowelPlugin } from '../src/index.ts'
 
 const fixture = fileURLToPath(new URL('./fixtures/app', import.meta.url))
+
+/** A module that keeps its container evolving. */
+const EVOLVING = `import { container } from '@doweljs/core'
+import { hot } from '@doweljs/core/evolve'
+export const app = await hot(import.meta.hot?.data, container())
+`
 const dowelSrc = fileURLToPath(new URL('../../dowel/src', import.meta.url))
 
 interface Harness extends AsyncDisposable {
@@ -32,7 +38,7 @@ async function start(): Promise<Harness> {
 		server: { middlewareMode: true, ws: false },
 		resolve: {
 			alias: [
-				{ find: /^@doweljs\/core\/hot$/, replacement: join(dowelSrc, 'hot.ts') },
+				{ find: /^@doweljs\/core\/evolve$/, replacement: join(dowelSrc, 'evolve.ts') },
 				{ find: /^@doweljs\/core$/, replacement: join(dowelSrc, 'index.ts') },
 			],
 		},
@@ -71,15 +77,22 @@ describe('@doweljs/vite', () => {
 		await harness?.[Symbol.asyncDispose]()
 	})
 
-	test('transforms declaring modules with a hot snippet, leaving others alone', async () => {
-		const users = await harness.server.environments.ssr.transformRequest('/users.ts')
-		expect(users?.code).toMatch(/\.update\(".*users\.ts", \{ Users \}\)/)
-		expect(users?.code).toContain('hot.accept()')
-		expect(users?.map).toBeTruthy()
-
-		// The root module builds the container, so it never accepts its own updates.
+	test('gives the module that calls hot() the snippet, leaving declaring modules alone', async () => {
+		// The SSR transform renames `import.meta` and the imports.
 		const main = await harness.server.environments.ssr.transformRequest('/main.ts')
-		expect(main?.code).not.toContain('.update(')
+		expect(main?.code).toContain('.hot.accept()')
+		expect(main?.code).toContain('.onHotFailure(')
+		expect(main?.code.indexOf('onHotFailure')).toBeLessThan(main?.code.indexOf('.hot)(') ?? 0)
+		expect(main?.code).toContain('.hot.prune(() => ')
+		expect(main?.code).toContain('"vite:beforeFullReload"')
+		expect(main?.code.match(/\.release\(/g)).toHaveLength(2)
+		// Only its own containers' failures, and a full reload only once it is this page's.
+		expect(main?.code).toContain('failure.store !== __vite_ssr_import_meta__.hot.data')
+		expect(main?.code).toContain('payload.path.endsWith(".html")')
+		expect(main?.map).toBeTruthy()
+
+		const users = await harness.server.environments.ssr.transformRequest('/users.ts')
+		expect(users?.code).not.toContain('import.meta.hot')
 	})
 
 	test('knows the static graph across modules', async () => {
@@ -95,13 +108,12 @@ describe('@doweljs/vite', () => {
 		expect(plugin.api.graph().duplicates).toEqual([])
 	})
 
-	test('replaces an edited service inside the live container', async () => {
+	test('an edit builds a successor that takes over from the running container', async () => {
 		type Main = typeof import('./fixtures/app/main.ts')
 		const main = (await harness.runner.import('/main.ts')) as Main
-		const app = await main.app
+		const { app } = main
 		const before = app.get(main.Users)
 		expect(before.version).toBe(1)
-		const db = app.get(main.Db)
 
 		const file = join(harness.root, 'users.ts')
 		writeFileSync(file, (await Bun.file(file).text()).replace('version: 1', 'version: 2'))
@@ -110,9 +122,42 @@ describe('@doweljs/vite', () => {
 			() => app.get(main.Users),
 			(users) => users.version === 2,
 		)
-		expect(after.db).toBe(db)
-		expect(db.closed).toBe(false)
-		expect(app.get(main.Logger).lines).toEqual(['users ready', 'users ready'])
+		expect(after.db).not.toBe(before.db)
+		expect(after.db.takenOverFrom).toBe(before.db.id)
+		await until(
+			() => before.db.closed,
+			(closed) => closed,
+		)
+		expect(app.get(main.Logger).lines).toEqual(['users ready'])
+	})
+
+	test('a successor that fails is reported for the error overlay, and the running container keeps serving', async () => {
+		type Main = typeof import('./fixtures/app/main.ts')
+		const main = (await harness.runner.import('/main.ts')) as Main
+		const { app } = main
+		const version = app.get(main.Users).version
+		const reported: { message: string }[] = []
+		const report = (data: { message: string }) => void reported.push(data)
+		harness.server.environments.ssr.hot.on('dowel:error', report)
+
+		try {
+			// Another file than the last test edited, whose change the watcher could still be settling.
+			const file = join(harness.root, 'db.ts')
+			const source = await Bun.file(file).text()
+			writeFileSync(
+				file,
+				source.replace('const connection', "throw new Error('db broke')\n\tconst connection"),
+			)
+			const [failure] = await until(
+				() => reported,
+				(failures) => failures.length > 0,
+			)
+			expect(failure?.message).toContain('db broke')
+			expect(app.get(main.Users).version).toBe(version)
+			writeFileSync(file, source)
+		} finally {
+			harness.server.environments.ssr.hot.off('dowel:error', report)
+		}
 	})
 })
 
@@ -127,10 +172,10 @@ describe('plugin configuration', () => {
 		) => unknown
 	}
 
-	test('optimizes dowel and @doweljs/core/hot together when serving', () => {
+	test('optimizes dowel and @doweljs/core/evolve together when serving', () => {
 		const plugin = dowel()
 		expect(hook(plugin, 'config')({}, { command: 'serve' })).toEqual({
-			optimizeDeps: { include: ['@doweljs/core', '@doweljs/core/hot'] },
+			optimizeDeps: { include: ['@doweljs/core', '@doweljs/core/evolve'] },
 		})
 		expect(hook(plugin, 'config')({}, { command: 'build' })).toBeUndefined()
 		expect(
@@ -154,13 +199,13 @@ describe('plugin configuration', () => {
 		const transform = plugin.transform as { handler: Function }
 		const result = await transform.handler.call(
 			{ resolve: async () => null, warn: () => {} },
-			`import { service } from '@doweljs/core'\nexport const A = service('A', () => 1)\n`,
-			'/app/a.ts',
+			EVOLVING,
+			'/app/main.ts',
 		)
 		expect(result).toBeUndefined()
 	})
 
-	test('hot replacement failures reach the error overlay', () => {
+	test('failed evolutions reach the error overlay', () => {
 		const listeners = new Map<string, (data: unknown) => void>()
 		const sent: unknown[] = []
 		const ssr = {
@@ -184,42 +229,58 @@ describe('plugin configuration', () => {
 		expect(transform.filter.id.exclude.map(String)).toEqual(['/node_modules/', '/\\.test\\.ts$/'])
 	})
 
-	test('a module that loses its last declaration still registers the empty set', async () => {
+	test('always accepts at the top, before a failing evaluation could skip an accept further down, and keeps a hashbang first', async () => {
 		const plugin = dowel()
 		hook(plugin, 'configResolved')({ command: 'serve', server: { hmr: true } })
 		const transform = plugin.transform as { handler: Function }
-		const context = { resolve: async () => null, warn: () => {}, environment: { name: 'client' } }
-		await transform.handler.call(
+		const context = { resolve: async () => null, warn: () => {} }
+		const accepting = (await transform.handler.call(
 			context,
-			`import { service } from '@doweljs/core'\nexport const A = service('A', () => 1)\n`,
-			'/app/a.ts',
+			`${EVOLVING}if (import.meta.hot) import.meta.hot.accept()\n`,
+			'/app/main.ts',
+		)) as { code: string }
+		expect(accepting.code.indexOf('\timport.meta.hot.accept();')).toBeLessThan(
+			accepting.code.indexOf('await hot('),
 		)
-		for (const code of [
-			`import { service } from '@doweljs/core'\nexport const n = 1\n`,
-			`export const n = 1\n`,
-		]) {
-			const result = (await transform.handler.call(context, code, '/app/a.ts')) as { code: string }
-			expect(result.code).toContain('.update("/app/a.ts", {  })')
-			expect(result.code).not.toContain('hot.accept()')
+
+		const script = (await transform.handler.call(
+			context,
+			`#!/usr/bin/env bun\n${EVOLVING}`,
+			'/app/cli.ts',
+		)) as {
+			code: string
 		}
-		// A module that never declared anything is left alone.
-		expect(
-			await transform.handler.call(context, `export const n = 1\n`, '/app/b.ts'),
-		).toBeUndefined()
-		// Another environment has its own runtime, which never saw the declarations.
-		const ssr = { ...context, environment: { name: 'ssr' } }
-		expect(await transform.handler.call(ssr, `export const n = 1\n`, '/app/a.ts')).toBeUndefined()
+		expect(script.code.startsWith('#!/usr/bin/env bun\n// @doweljs/vite')).toBe(true)
 	})
 
-	test("the injected snippet releases the module's names when it is pruned", async () => {
+	test('gives a module that calls track() the devtools clients alone', async () => {
 		const plugin = dowel()
+		plugin.api.addClientModule('virtual:client')
 		hook(plugin, 'configResolved')({ command: 'serve', server: { hmr: true } })
 		const transform = plugin.transform as { handler: Function }
 		const result = (await transform.handler.call(
 			{ resolve: async () => null, warn: () => {} },
-			`import { service } from '@doweljs/core'\nexport const A = service('A', () => 1)\n`,
-			'/app/a.ts',
+			`import { container } from '@doweljs/core'
+import { track } from '@doweljs/core/evolve'
+track(await container().build())
+`,
+			'/app/main.ts',
 		)) as { code: string }
-		expect(result.code).toContain('import.meta.hot.prune(() => __dowel_hot__.forget("/app/a.ts"))')
+		expect(result.code).toContain('import "virtual:client"')
+		expect(result.code).not.toContain('import.meta.hot')
+	})
+
+	test('leaves modules that do not call hot() or track() alone', async () => {
+		const plugin = dowel()
+		hook(plugin, 'configResolved')({ command: 'serve', server: { hmr: true } })
+		const transform = plugin.transform as { handler: Function }
+		const context = { resolve: async () => null, warn: () => {} }
+		for (const code of [
+			`import { service } from '@doweljs/core'\nexport const A = service('A', () => 1)\n`,
+			`import { hot } from '@doweljs/core/evolve'\nexport { hot }\n`,
+			`export const n = 1\n`,
+		]) {
+			expect(await transform.handler.call(context, code, '/app/a.ts')).toBeUndefined()
+		}
 	})
 })

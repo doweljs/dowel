@@ -3,9 +3,9 @@
  * in every environment, and the shape of what the page reads.
  */
 
-import type { ContainerSnapshot } from '@doweljs/core/hot'
+import type { LineageSnapshot } from '@doweljs/core/evolve'
 
-/** Sent by the server to every environment: report your containers. */
+/** Sent by the server to every environment: report the applications `hot()` keeps. */
 export const INSPECT = 'dowel:inspect'
 
 export interface InspectMessage {
@@ -20,17 +20,17 @@ export interface StateMessage {
 	/** The request this answers. */
 	readonly request: number
 	readonly environment: string
-	readonly containers: readonly ContainerSnapshot[]
+	readonly lineages: readonly LineageSnapshot[]
 }
 
 /**
- * A container as `state.json` reports it. When several clients share an
- * environment (two tabs), their containers' ids are prefixed with the client
- * (`2.1`) to keep them apart.
+ * An application `hot()` keeps, as `state.json` reports it. When several
+ * clients share an environment (two tabs), their lineages' ids are prefixed
+ * with the client (`2.1`) to keep them apart.
  */
-export interface ReportedContainer extends Omit<ContainerSnapshot, 'id'> {
+export interface ReportedLineage extends Omit<LineageSnapshot, 'id'> {
 	readonly id: number | string
 }
 
-/** What `state.json` returns: the containers of each environment. */
-export type State = Record<string, readonly ReportedContainer[]>
+/** What `state.json` returns: the lineages of each environment. */
+export type State = Record<string, readonly ReportedLineage[]>

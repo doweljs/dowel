@@ -1,6 +1,6 @@
 # @doweljs/vite
 
-Vite integration for [dowel](../dowel): hot replacement of services, and diagnostics for the dependency graph.
+Vite integration for [dowel](../dowel): reloading by evolution, and diagnostics for the dependency graph.
 
 ```ts
 // vite.config.ts
@@ -10,39 +10,47 @@ import { defineConfig } from 'vite'
 export default defineConfig({ plugins: [dowel()] })
 ```
 
-## Hot replacement
+## Reloading
 
-Edit a module, and every declaration in it is swapped inside every live container, in every environment (client and SSR alike), without a reload:
+Keep the container with `hot()` from `@doweljs/core/evolve`, in the module that builds it:
 
-- Services that depend on what changed are recreated.
-- Instances declared in untouched modules, such as a database connection, stay alive.
-- Opened containers are disposed, so the next request sees the new code.
+```ts
+// main.ts
+import { hot } from '@doweljs/core/evolve'
 
-The terminal and the browser console log each swap, as in `[dowel] replaced Users`.
+export const app = await hot(import.meta.hot?.data, container().provide(Server).bind(Config, config))
+```
 
-The new generation is initialized before the old one is torn down. If it fails, because of an unbound slot or a factory that throws, Vite's error overlay shows why, and the container keeps running its previous generation. [`@doweljs/devtools`](../devtools) marks the container as failed until an update succeeds.
+The plugin makes that module accept its own updates. Edit any module beneath it, in any environment (client and SSR alike), and Vite evaluates it again: `hot()` builds a successor from the edited code, and it takes over from the running container without a reload.
 
-A module accepts its own updates when every export is a slot, service, scope or execution, and it doesn't build a container. Other modules fall back to Vite's normal propagation, which still updates containers once it reaches a module that accepts. Set `hot: 'always'` to make every declaring module accept its own updates, or `hot: false` to inject nothing.
+- Requests and runs in flight finish on the code they started on; the next ones reach the successor. Code still holding the previous container, or the nodes of modules that were evaluated again, reaches the successor too.
+- Keep the container, not the services you get from it: an instance saved from `app.get()` belongs to the generation that created it, which is disposed after an edit, closing what it adopted. Call `get()` where you use it.
+- Effects (`ctx.whileActive()`) hand their state over, so a server can pass its socket or a pool its connections to the successor's instance.
+- If the successor fails, because of an unbound slot or a factory that throws, Vite's error overlay shows why, and the running container keeps serving until an edit succeeds. [`@doweljs/devtools`](../devtools) marks it as failed meanwhile.
+
+When the module is dropped, or the environment reloads in full, the plugin disposes the container it kept with `release()`, so nothing is left running behind the next one. In production builds `import.meta.hot` is undefined, and `hot()` is `build()`.
+
+The plugin finds `hot()` and `track()` imported from `@doweljs/core/evolve` by name or as a namespace (`evolve.hot(…)`), not through a module of your own that re-exports them.
 
 ## Diagnostics
 
-When two modules declare a slot or service with the same name, the plugin warns at transform time and names both locations. Hot replacement identifies nodes by name, so it would treat the two as one.
+When two modules declare a slot or service with the same name, the plugin warns at transform time and names both locations. A successor resolves the nodes of earlier generations by name, so it would treat the two as one.
 
 ## Options
 
-| Option    | Default             | Description                                           |
-| --------- | ------------------- | ----------------------------------------------------- |
-| `hot`     | `'auto'`            | `'auto'`, `'always'` or `false`. See above.           |
-| `include` | `/\.[cm]?[jt]sx?$/` | Module ids to analyze.                                |
-| `exclude` | none                | Module ids to skip. `node_modules` is always skipped. |
+| Option    | Default             | Description                                                                       |
+| --------- | ------------------- | --------------------------------------------------------------------------------- |
+| `hot`     | `true`              | Whether modules that call `hot()` accept their updates and report failures.       |
+| `include` | `/\.[cm]?[jt]sx?$/` | Module ids to analyze.                                                            |
+| `exclude` | none                | Module ids to skip. `node_modules` is always skipped.                             |
 
 Other plugins reach this one through its `api`:
 
 - `api.graph()` returns the dependency graph known from static analysis.
-- `api.addClientModule(id)` makes every module with hot code also import the module `id`.
+- `api.addClientModule(id)` makes every module that calls `hot()` or `track()` also import the module `id`.
 
 ## How it works
 
 The plugin only recognizes top-level declarations: `const X = service(…)`, `const T = slot(…)()`, `const S = scope(…)` and `const E = execution(…)`. That restriction is what makes the graph knowable without running any code.
 
-In development, the plugin appends a snippet to each module that declares nodes. After every evaluation, the snippet registers the module's declarations with `@doweljs/core/hot`. Production builds are left untouched.
+In development, the plugin puts a snippet at the top of each module that calls `hot()`: it accepts the module's updates and reports failed successors to the error overlay. Declaring modules are left as they are, so an edit propagates up to the module that keeps the container. Production builds are left untouched.

@@ -14,6 +14,7 @@ import {
 	service,
 	slot,
 } from '@doweljs/core'
+import { hot, prepare } from '@doweljs/core/evolve'
 
 export interface Logger {
 	info(message: string): void
@@ -55,3 +56,10 @@ export const app = await builder.build()
 export const session = await app.open(Session)
 export const request = await session.open(PerRequest, bind(Req, { url: '/' }))
 export const run = app.get(Run)
+
+export const Port = service('Port', (ctx) => {
+	ctx.whileActive((previous, { generation }) => () => ({ previous, generation }))
+})
+export const evolving = await hot(undefined, builder.provide(Port))
+export const candidate = await prepare(app, builder)
+export const activation = await candidate.activate({ drain: 1000 })

@@ -1,10 +1,11 @@
 /**
- * Static analysis of a module's dowel declarations.
+ * Static analysis of a module's dowel declarations, and of whether it keeps
+ * a container evolving with `hot()`.
  *
  * Only top-level `const X = service(...)` / `slot(...)()` declarations are
  * recognized. That is deliberate: a dependency graph declared at the top
- * level of a module is what makes hot replacement and devtools possible without running
- * the code.
+ * level of a module is what makes the devtools' graph possible without
+ * running the code.
  */
 
 import type { ESTree } from 'vite'
@@ -55,13 +56,10 @@ export interface ModuleAnalysis {
 	readonly reexports: ReadonlyMap<string, ImportRef>
 	/** Sources of `export * from` statements, searched in order for names not exported otherwise. */
 	readonly stars: readonly string[]
-	/**
-	 * True when every export is a dowel declaration, so the module can accept
-	 * its own hot updates without leaving importers with stale values.
-	 */
-	readonly selfContained: boolean
-	/** True when the module calls `container()`, which makes it an app root. */
-	readonly buildsContainer: boolean
+	/** True when the module calls `hot()` from `@doweljs/core/evolve`, which makes it where updates are accepted. */
+	readonly evolves: boolean
+	/** True when the module calls `track()` from `@doweljs/core/evolve`, showing a container in devtools. */
+	readonly tracks: boolean
 }
 
 type Node = ESTree.Node
@@ -90,13 +88,12 @@ export function analyze(id: string, code: string): ModuleAnalysis | null {
 	if (errors.length > 0) return null
 
 	const dowel = collectDowelImports(program)
+	const evolveLocals = collectEvolveImports(program)
 	const declarations: Declaration[] = []
 	const imports = new Map<string, ImportRef>()
 	const exports = new Map<string, string>()
 	const reexports = new Map<string, ImportRef>()
 	const stars: string[] = []
-	// Whether the module exports anything besides its dowel declarations.
-	let mixed = false
 
 	for (const statement of program.body) {
 		switch (statement.type) {
@@ -120,22 +117,16 @@ export function analyze(id: string, code: string): ModuleAnalysis | null {
 					const found = declarationsOf(declaration, dowel)
 					declarations.push(...found)
 					for (const declarator of declaration.declarations) {
-						for (const name of boundNames(declarator.id)) {
-							exports.set(name, name)
-							if (!found.some((d) => d.local === name)) mixed = true
-						}
+						for (const name of boundNames(declarator.id)) exports.set(name, name)
 					}
-				} else if (declaration !== null) {
-					mixed = true
-				} else if (statement.source !== null) {
-					mixed = true
+				} else if (declaration === null && statement.source !== null) {
 					for (const specifier of statement.specifiers) {
 						reexports.set(moduleExportName(specifier.exported), {
 							source: statement.source.value,
 							imported: moduleExportName(specifier.local),
 						})
 					}
-				} else {
+				} else if (declaration === null) {
 					for (const specifier of statement.specifiers) {
 						exports.set(moduleExportName(specifier.exported), moduleExportName(specifier.local))
 					}
@@ -145,12 +136,9 @@ export function analyze(id: string, code: string): ModuleAnalysis | null {
 			case 'ExportDefaultDeclaration':
 				if (statement.declaration.type === 'Identifier') {
 					exports.set('default', statement.declaration.name)
-				} else {
-					mixed = true
 				}
 				break
 			case 'ExportAllDeclaration':
-				mixed = true
 				if (statement.exported === null) stars.push(statement.source.value)
 				else {
 					reexports.set(moduleExportName(statement.exported), {
@@ -164,23 +152,27 @@ export function analyze(id: string, code: string): ModuleAnalysis | null {
 		}
 	}
 
-	if (dowel.size === 0 && reexports.size === 0 && stars.length === 0) return null
-
-	const locals = new Set(declarations.map((d) => d.local))
-	for (const local of exports.values()) if (!locals.has(local)) mixed = true
-
-	const containerLocal = [...dowel].find(([, name]) => name === 'container')?.[0]
-	const buildsContainer = containerLocal !== undefined && callsIdentifier(program, containerLocal)
-
-	return {
-		declarations,
-		imports,
-		exports,
-		reexports,
-		stars,
-		selfContained: !mixed && !buildsContainer,
-		buildsContainer,
+	const calls = (name: string) => {
+		const local = evolveLocals.named.get(name)
+		return containsCall(program, (callee) => {
+			if (callee.type === 'Identifier') return callee.name === local
+			// `evolve.hot(…)` with `import * as evolve from '@doweljs/core/evolve'`.
+			return (
+				callee.type === 'MemberExpression' &&
+				!callee.computed &&
+				callee.object.type === 'Identifier' &&
+				evolveLocals.namespaces.has(callee.object.name) &&
+				callee.property.type === 'Identifier' &&
+				callee.property.name === name
+			)
+		})
 	}
+	const evolves = calls('hot')
+	const tracks = calls('track')
+	if (dowel.size === 0 && !evolves && !tracks && reexports.size === 0 && stars.length === 0) {
+		return null
+	}
+	return { declarations, imports, exports, reexports, stars, evolves, tracks }
 }
 
 /** `Name` or `ns.Name`, the references a static graph can follow. */
@@ -241,6 +233,29 @@ function collectDowelImports(program: ESTree.Program): DowelImports {
 		}
 	}
 	return result
+}
+
+/** How `@doweljs/core/evolve` is imported: local names by export, and namespace imports. */
+interface EvolveImports {
+	readonly named: ReadonlyMap<string, string>
+	readonly namespaces: ReadonlySet<string>
+}
+
+function collectEvolveImports(program: ESTree.Program): EvolveImports {
+	const named = new Map<string, string>()
+	const namespaces = new Set<string>()
+	for (const statement of program.body) {
+		if (statement.type !== 'ImportDeclaration' || statement.source.value !== '@doweljs/core/evolve')
+			continue
+		for (const specifier of statement.specifiers) {
+			if (specifier.type === 'ImportSpecifier') {
+				named.set(moduleExportName(specifier.imported), specifier.local.name)
+			} else if (specifier.type === 'ImportNamespaceSpecifier') {
+				namespaces.add(specifier.local.name)
+			}
+		}
+	}
+	return { named, namespaces }
 }
 
 function declarationsOf(statement: ESTree.VariableDeclaration, dowel: DowelImports): Declaration[] {
@@ -449,8 +464,8 @@ function boundNames(pattern: ESTree.BindingPattern): string[] {
 	}
 }
 
-/** Whether any call expression in the tree calls the given identifier. */
-function callsIdentifier(root: Node, name: string): boolean {
+/** Whether any call expression in the tree has a callee `matches` accepts. */
+function containsCall(root: Node, matches: (callee: Node) => boolean): boolean {
 	const stack: unknown[] = [root]
 	while (stack.length > 0) {
 		const current = stack.pop()
@@ -460,13 +475,7 @@ function callsIdentifier(root: Node, name: string): boolean {
 			continue
 		}
 		const node = current as Node
-		if (
-			node.type === 'CallExpression' &&
-			node.callee.type === 'Identifier' &&
-			node.callee.name === name
-		) {
-			return true
-		}
+		if (node.type === 'CallExpression' && matches(node.callee)) return true
 		for (const [key, value] of Object.entries(node)) {
 			if (key !== 'parent' && typeof value === 'object' && value !== null) stack.push(value)
 		}

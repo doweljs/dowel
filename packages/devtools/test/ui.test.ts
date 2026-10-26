@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { NodeInfo } from '@doweljs/core'
 import type { Graph, GraphNode } from '@doweljs/vite'
-import type { ReportedContainer } from '../src/protocol.ts'
+import type { ReportedLineage } from '../src/protocol.ts'
 import { layout } from '../ui/layout.ts'
 import { buildModel, viewModel } from '../ui/model.ts'
 import { detailsHtml, escapeHtml, graphSvg, listHtml } from '../ui/render.ts'
@@ -39,8 +39,8 @@ function live(kind: NodeInfo['kind'], name: string, fields: Partial<NodeInfo> = 
 	}
 }
 
-function container(nodes: NodeInfo[], id: number | string = 1): ReportedContainer {
-	return { id, status: { state: 'current', error: null }, nodes }
+function container(nodes: NodeInfo[], id: number | string = 1): ReportedLineage {
+	return { id, generation: 1, failure: null, retiring: [], nodes }
 }
 
 const graph = (...nodes: GraphNode[]): Graph => ({ nodes, duplicates: [] })

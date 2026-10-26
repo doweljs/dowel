@@ -12,7 +12,7 @@ const source = (path: string) =>
 export default defineConfig({
 	resolve: {
 		alias: [
-			{ find: /^@doweljs\/core\/hot$/, replacement: source('hot.ts') },
+			{ find: /^@doweljs\/core\/evolve$/, replacement: source('evolve.ts') },
 			{ find: /^@doweljs\/core$/, replacement: source('index.ts') },
 		],
 	},
