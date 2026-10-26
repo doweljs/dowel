@@ -38,6 +38,14 @@ export function scope(name: string, parent?: AnyScope): unknown {
 		)
 	}
 	const parentNode = parent === undefined ? ROOT : scopeNode(parent)
+	for (let above: ScopeNode | null = parentNode; above !== null; above = above.parent) {
+		if (above.name === name) {
+			throw new DowelError(
+				'INVALID_SCOPE',
+				`Scope name '${name}' is already the name of a scope above it. Scope names must be unique along a chain.`,
+			)
+		}
+	}
 	const node: ScopeNode = {
 		kind: 'scope',
 		id: allocateId(),

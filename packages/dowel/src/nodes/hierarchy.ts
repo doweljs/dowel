@@ -22,17 +22,13 @@ export function deeper(a: ScopeNode, b: ScopeNode): ScopeNode | null {
 }
 
 /**
- * Names two scopes for a message about how they relate. Two distinct scopes
- * sharing a name, anywhere up their chains, have no such message: the
- * duplicate declaration is the problem, and is reported instead.
+ * Rejects two distinct scopes that share a name, among `a`, `b` and their
+ * ancestors, which `subject` brought together. Called where a check between
+ * two scopes failed: a namesake is then the problem to report, since no
+ * message about how the two relate would make sense.
  */
-export function scopeNames(a: ScopeNode, b: ScopeNode): [string, string] {
-	assertDistinctNames(a, b)
-	return [a.name, b.name]
-}
-
-/** Rejects two distinct scopes that share a name, among `a`, `b` and their ancestors. */
-export function assertDistinctNames(a: ScopeNode, b: ScopeNode): void {
+export function assertDistinctNames(a: ScopeNode, b: ScopeNode, subject: string): void {
+	// A chain never repeats a name (see `scope()`), so one entry per name covers it.
 	const byName = new Map<string, ScopeNode>()
 	for (let current: ScopeNode | null = a; current !== null; current = current.parent) {
 		byName.set(current.name, current)
@@ -42,7 +38,7 @@ export function assertDistinctNames(a: ScopeNode, b: ScopeNode): void {
 		if (other !== undefined && other !== current) {
 			throw new DowelError(
 				'DUPLICATE',
-				`Two distinct scopes are named '${current.name}'. Declare a scope once and import it where it is used.`,
+				`${subject} meets two distinct scopes named '${current.name}'. Declare a scope once and import it where it is used; a module that declares it may have been loaded twice.`,
 			)
 		}
 	}
@@ -58,9 +54,9 @@ export function assertImplScope(
 	role: string,
 ): void {
 	if (impl.kind === 'value' || isAtOrAbove(impl.service.scope, target.scope)) return
-	const [lives, needed] = scopeNames(impl.service.scope, target.scope)
+	assertDistinctNames(impl.service.scope, target.scope, `The ${role} of '${target.name}'`)
 	throw new DowelError(
 		'CAPTIVE_DEPENDENCY',
-		`Service '${impl.service.name}' lives in scope '${lives}', which '${target.name}' in '${needed}' cannot see, so it cannot be its ${role}. Use a service in '${needed}' or above.`,
+		`Service '${impl.service.name}' lives in scope '${impl.service.scope.name}', which '${target.name}' in '${target.scope.name}' cannot see, so it cannot be its ${role}. Use a service in '${target.scope.name}' or above.`,
 	)
 }

@@ -137,18 +137,33 @@ describe('nested scopes', () => {
 		const Impostor = scope('request')
 		const Fake = service('Fake', () => ({ url: '/' }), { scope: Impostor })
 		// Standing in for a node of the other scope.
-		expect(() => bind(Req, untyped(Fake))).toThrow(/Two distinct scopes are named 'request'/)
+		expect(() => bind(Req, untyped(Fake))).toThrow(
+			/The implementation of 'Req' meets two distinct scopes named 'request'/,
+		)
 		// Declared in one, depending on the other.
 		expect(() =>
 			service('Mixed', untyped({ req: Req }), (d: unknown) => d, { scope: untyped(Impostor) }),
-		).toThrow(/Two distinct scopes are named 'request'/)
-		// Opened in place of the one the container was built with, even from the right parent.
-		const Session = scope('session')
-		const Twin = scope('request', Session)
+		).toThrow(/Service 'Mixed' meets two distinct scopes named 'request'/)
+		// Opened in place of the one the container was built with, from the right parent.
+		const Twin = scope('request', SessionScope)
 		const app = await container().provide(Handler).build()
 		const session = await app.open(SessionScope, bind(Sess, { id: 's' }))
-		await expect(untyped(session).open(Twin)).rejects.toThrow(/Two distinct scopes are named/)
+		await expect(untyped(session).open(Twin)).rejects.toThrow(
+			/Opening scope 'request' meets two distinct scopes named 'request'/,
+		)
+		// A namesake ancestor is caught too.
+		const OtherSession = scope('session')
+		const Nested = scope('request', OtherSession)
+		await expect(untyped(session).open(Nested)).rejects.toThrow(
+			/Opening scope 'request' meets two distinct scopes named 'session'/,
+		)
 		await app.dispose()
+	})
+
+	test('a scope cannot take the name of a scope above it', () => {
+		const Outer = scope('x')
+		expect(() => scope('x', Outer)).toThrow(/already the name of a scope above it/)
+		expect(() => scope('x', scope('y', Outer))).toThrow(/already the name of a scope above it/)
 	})
 
 	test('disposal is children first, then dependents before dependencies, in sequence', async () => {
@@ -193,12 +208,12 @@ describe('nested scopes', () => {
 		const Ta = slot('Ta', { scope: A })<number>()
 		const Tb = slot('Tb', { scope: B })<number>()
 		expect(() => service('S', untyped({ a: Ta, b: Tb }), () => 1)).toThrow(
-			/Two distinct scopes are named 'x'/,
+			/Service 'S' meets two distinct scopes named 'x'/,
 		)
 		const Sa = service('Sa', { a: Ta }, () => 1)
 		const Sb = service('Sb', { b: Tb }, () => 1)
 		await expect(untyped(container().provide(Sa, Sb)).build()).rejects.toThrow(
-			/Two distinct scopes are named 'x'/,
+			/The container meets two distinct scopes named 'x'/,
 		)
 	})
 })

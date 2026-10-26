@@ -6,7 +6,7 @@ import type { ScopeAboveDependencies } from '../model/diagnostics.ts'
 import type { ComputeMeta, MetaOf, Resolved } from '../model/infer.ts'
 import type { CheckScopes, EffectiveScope, InferredScope } from '../model/scopes.ts'
 import { dependencyOf, scopeNode, usableScope } from '../nodes/coerce.ts'
-import { deeper, isAtOrAbove, scopeNames } from '../nodes/hierarchy.ts'
+import { assertDistinctNames, deeper, isAtOrAbove } from '../nodes/hierarchy.ts'
 import {
 	allocateId,
 	type Factory,
@@ -78,10 +78,10 @@ export function service(name: string, ...rest: unknown[]): unknown {
 		}
 		const next = deeper(inferred, scope)
 		if (next === null) {
-			const [depends, other] = scopeNames(scope, inferred)
+			assertDistinctNames(scope, inferred, `Service '${name}'`)
 			throw new DowelError(
 				'CAPTIVE_DEPENDENCY',
-				`Service '${name}' depends on '${key}' in scope '${depends}' and on another dependency in scope '${other}', which are on different scope branches.`,
+				`Service '${name}' depends on '${key}' in scope '${scope.name}' and on another dependency in scope '${inferred.name}', which are on different scope branches.`,
 			)
 		}
 		inferred = next
@@ -89,12 +89,12 @@ export function service(name: string, ...rest: unknown[]): unknown {
 
 	const explicit = options?.scope === undefined ? null : scopeNode(options.scope)
 	if (explicit !== null && !isAtOrAbove(inferred, explicit)) {
-		const [declared, lives] = scopeNames(explicit, inferred)
+		assertDistinctNames(explicit, inferred, `Service '${name}'`)
 		throw new DowelError(
 			'CAPTIVE_DEPENDENCY',
 			deeper(inferred, explicit) === null
-				? `Service '${name}' is declared in scope '${declared}' but a dependency lives in '${lives}', which is on a different scope branch.`
-				: `Service '${name}' is declared in scope '${declared}' but a dependency lives in '${lives}', below it.`,
+				? `Service '${name}' is declared in scope '${explicit.name}' but a dependency lives in '${inferred.name}', which is on a different scope branch.`
+				: `Service '${name}' is declared in scope '${explicit.name}' but a dependency lives in '${inferred.name}', below it.`,
 		)
 	}
 	const scope = explicit ?? inferred

@@ -1,6 +1,6 @@
 import type { ScopePlan } from '../compile/plan.ts'
 import { DowelError } from '../errors.ts'
-import { scopeNames } from '../nodes/hierarchy.ts'
+import { assertDistinctNames } from '../nodes/hierarchy.ts'
 import { type BindingNode, ROOT } from '../nodes/node.ts'
 import type { Store } from './store.ts'
 
@@ -20,10 +20,10 @@ export function supply(
 			)
 		}
 		if (slot.scope !== scopePlan.scope) {
-			const [lives, opening] = scopeNames(slot.scope, scopePlan.scope)
+			assertDistinctNames(slot.scope, scopePlan.scope, `Opening scope '${scopePlan.scope.name}'`)
 			throw new DowelError(
 				'INVALID_SCOPE',
-				`Slot '${slot.name}' lives in scope '${lives}', so opening '${opening}' cannot supply it.${slot.scope === ROOT ? ' Bind it at build() instead.' : ''}`,
+				`Slot '${slot.name}' lives in scope '${slot.scope.name}', so opening '${scopePlan.scope.name}' cannot supply it.${slot.scope === ROOT ? ' Bind it at build() instead.' : ''}`,
 			)
 		}
 		if (slot.many) {
