@@ -7,11 +7,8 @@
 		"lib": ["ES2023", "ESNext.Disposable", "DOM"],
 		"rootDir": "../..",
 		"types": ["bun", "vite/client"],
-		// The config imports the plugins' sources, which import each other: check those against sources too.
-		"customConditions": ["@doweljs/source"],
 		"paths": {
-			"@doweljs/core": ["../../packages/dowel/src/index.ts"],
-			"@doweljs/devtools/client": ["../../packages/devtools/src/track.ts"]
+			"@doweljs/core": ["../../packages/dowel/src/index.ts"]
 		}
 	},
 	"include": ["src", "test", "vite.config.ts"]

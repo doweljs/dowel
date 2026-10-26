@@ -1,12 +1,8 @@
 # dowel
 
-Type-complete dependency injection for TypeScript, with devtools for Vite.
+Type-complete dependency injection for TypeScript.
 
-| Package                                  | Description                                                                         |
-| ---------------------------------------- | ----------------------------------------------------------------------------------- |
-| [`@doweljs/core`](packages/dowel)        | The library: slots, services, scopes, executions and containers.                    |
-| [`@doweljs/vite`](packages/vite)         | Vite plugin: diagnostics and a static graph of the dependency declarations.         |
-| [`@doweljs/devtools`](packages/devtools) | The dependency graph and live instance state, on the Vite dev server.               |
+The library is [`@doweljs/core`](packages/dowel).
 
 ```ts
 const Logger = slot('Logger')<{ info(message: string): void }>()
@@ -36,7 +32,7 @@ await using request = await app.open(PerRequest, bind(Request, req))
 - domain services, and services scoped to a request;
 - test fakes, which the tests put in place with `override()` on the production composition.
 
-Run `bun run dev` inside it and open `/__dowel`.
+Run `bun run dev` inside it.
 
 ## Development
 

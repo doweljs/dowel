@@ -20,33 +20,9 @@
         "vite": "^8.3.4",
       },
     },
-    "packages/devtools": {
-      "name": "@doweljs/devtools",
-      "version": "0.3.0",
-      "dependencies": {
-        "@dagrejs/dagre": "^3.1.1",
-      },
-      "devDependencies": {
-        "@doweljs/core": "^0.3.0",
-        "@doweljs/vite": "^0.3.0",
-      },
-      "peerDependencies": {
-        "@doweljs/core": "^0.3.0",
-        "@doweljs/vite": "^0.3.0",
-        "vite": "^8.3.4",
-      },
-    },
     "packages/dowel": {
       "name": "@doweljs/core",
       "version": "0.3.0",
-    },
-    "packages/vite": {
-      "name": "@doweljs/vite",
-      "version": "0.3.0",
-      "peerDependencies": {
-        "@doweljs/core": "^0.3.0",
-        "vite": "^8.3.4",
-      },
     },
   },
   "packages": {
@@ -102,17 +78,9 @@
 
     "@clack/prompts": ["@clack/prompts@1.8.1", "", { "dependencies": { "@clack/core": "1.5.1", "fast-string-width": "^3.0.2", "fast-wrap-ansi": "^0.2.0", "sisteransi": "^1.0.5" } }, "sha512-dlT1m5e/0yUL0kRNcQn7yGLVThkgbB0Ga/1AmfDDC/8ik6AIiSf2QLQO2zPYvefsHP0aFgxO93cVLCCfDp7kzQ=="],
 
-    "@dagrejs/dagre": ["@dagrejs/dagre@3.1.1", "", { "dependencies": { "@dagrejs/graphlib": "4.0.5" } }, "sha512-zroZB1dFOFiGgv4Xcrn1DckB1o4aOikPqD2NDQPV0WM//CXGcS6xiD0rNkqHmw6FEg4tabt4nxPLwgCWT+Vb2A=="],
-
-    "@dagrejs/graphlib": ["@dagrejs/graphlib@4.0.5", "", {}, "sha512-7xrBTqIts3o+PMUZX97wSc+7TUbW+/rULzGNCTP6yooNVDXbzw4Wutg/H/xOutTB/c/k0YqOAavgPh4/Zk9PFA=="],
-
     "@doweljs/core": ["@doweljs/core@workspace:packages/dowel"],
 
-    "@doweljs/devtools": ["@doweljs/devtools@workspace:packages/devtools"],
-
     "@doweljs/example-shop": ["@doweljs/example-shop@workspace:examples/shop"],
-
-    "@doweljs/vite": ["@doweljs/vite@workspace:packages/vite"],
 
     "@emnapi/core": ["@emnapi/core@1.11.2", "", { "dependencies": { "@emnapi/wasi-threads": "1.2.2", "tslib": "^2.4.0" } }, "sha512-TC8MkTuZUtcTSiFeuC0ksCh9QIJ5+F21MvZ4Wn4ORfYaFJ/0dsiudv5tVkejgwZlwQ39jL9WWDe2lz8x0WglOA=="],
 
