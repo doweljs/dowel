@@ -226,7 +226,7 @@ Contributions resolve to a readonly array, in the order they were contributed. A
 
 ### Introspection
 
-`app.inspect()` and `request.inspect()` describe every node: its scope, dependencies, binding and instance status. [`@doweljs/devtools`](../devtools) shows the same, live, on the Vite dev server.
+`app.inspect()` and `request.inspect()` describe every node: its scope, dependencies, binding and instance status.
 
 ## Errors
 

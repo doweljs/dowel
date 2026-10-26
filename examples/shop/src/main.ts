@@ -37,10 +37,8 @@ const app = await appBuilder({
 	.build()
 
 // Every edit evaluates this module again: the container built before is
-// disposed, and the edited code builds the next one. The devtools see each.
+// disposed, and the edited code builds the next one.
 if (import.meta.hot) {
-	const { track } = await import('@doweljs/devtools/client')
-	track(app)
 	import.meta.hot.accept()
 	import.meta.hot.dispose(() => app.dispose())
 }
