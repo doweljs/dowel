@@ -177,7 +177,7 @@ app.open(Request, …)   // error: NotChildScope<"request", "root">
 
 A service lives in the deepest scope among its dependencies. Dependencies on different branches, such as a request-scope slot and a job-scope slot, are rejected where the service is declared.
 
-Scopes are compared by lineage, their names from the root down, so a different scope that happens to share a name can't be opened in its place.
+A scope is the object `scope()` returned: declare each once and import it where it is used. Two distinct scopes sharing a name are rejected wherever they meet, so one can't be opened or bound in the other's place.
 
 ### Executions
 

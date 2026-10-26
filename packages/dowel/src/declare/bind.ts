@@ -2,7 +2,7 @@ import type { DeclaredName } from '../model/checks.ts'
 import type { Binding, Slot, SlotMeta } from '../model/declarations.ts'
 import type { BindingMetaOf, Impl } from '../model/infer.ts'
 import { implOf, slotNode } from '../nodes/coerce.ts'
-import { assertImplScope } from '../nodes/lineage.ts'
+import { assertImplScope } from '../nodes/hierarchy.ts'
 import { type BindingNode, internal } from '../nodes/node.ts'
 
 /**

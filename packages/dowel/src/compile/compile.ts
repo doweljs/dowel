@@ -11,7 +11,7 @@
 
 import { DowelError, formatPath } from '../errors.ts'
 import { dependencyOf } from '../nodes/coerce.ts'
-import { assertImplScope, isAtOrAbove, scopeNames } from '../nodes/lineage.ts'
+import { assertDistinctNames, assertImplScope, isAtOrAbove } from '../nodes/hierarchy.ts'
 import {
 	type DeclaredNode,
 	type ExecutionNode,
@@ -157,12 +157,7 @@ class Compiler {
 	private scopeDraft(node: ScopeNode): ScopeDraft {
 		const existing = this.scopes.get(node.name)
 		if (existing !== undefined) {
-			if (existing.scope !== node) {
-				throw new DowelError(
-					'DUPLICATE',
-					`Two distinct scopes are named '${node.name}'. Scope names must be unique within a container.`,
-				)
-			}
+			if (existing.scope !== node) assertDistinctNames(existing.scope, node, 'The container')
 			return existing
 		}
 		if (node.parent !== null) this.scopeDraft(node.parent)
@@ -359,10 +354,10 @@ class Compiler {
 		const entryNode = declared.entry
 		const entry = this.planNode(entryNode, false)
 		if (!isAtOrAbove(entry.scope, child)) {
-			const [runs, lives] = scopeNames(child, entry.scope)
+			assertDistinctNames(child, entry.scope, `Execution '${declared.name}'`)
 			throw new DowelError(
 				'CAPTIVE_DEPENDENCY',
-				`Execution '${declared.name}' runs in scope '${runs}' but its entry '${entry.name}' lives in '${lives}', which is not visible from there.`,
+				`Execution '${declared.name}' runs in scope '${child.name}' but its entry '${entry.name}' lives in '${entry.scope.name}', which is not visible from there.`,
 			)
 		}
 		const needs = this.needsOf(entry, childDraft)
@@ -408,10 +403,10 @@ class Compiler {
 			const target = dependency.node
 			const plan = this.planNode(target, dependency.optional)
 			if (!isAtOrAbove(plan.scope, scope)) {
-				const [lives, depends] = scopeNames(scope, plan.scope)
+				assertDistinctNames(scope, plan.scope, `Service '${node.name}'`)
 				throw new DowelError(
 					'CAPTIVE_DEPENDENCY',
-					`Service '${node.name}' lives in scope '${lives}' but depends on '${plan.name}' in '${depends}', which it cannot see.`,
+					`Service '${node.name}' lives in scope '${scope.name}' but depends on '${plan.name}' in '${plan.scope.name}', which it cannot see.`,
 				)
 			}
 			deps.push({ key, plan, optional: dependency.optional })

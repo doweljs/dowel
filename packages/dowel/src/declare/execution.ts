@@ -13,7 +13,7 @@ import type { EntryNotVisible } from '../model/diagnostics.ts'
 import type { DependencyGraph, GraphOf, Infer, MetaOf, NameOf } from '../model/infer.ts'
 import type { UnionToIntersection } from '../model/util.ts'
 import { declaredNode, scopeNode, slotNode } from '../nodes/coerce.ts'
-import { isAtOrAbove, sameLineage, scopeNames } from '../nodes/lineage.ts'
+import { assertDistinctNames, isAtOrAbove } from '../nodes/hierarchy.ts'
 import {
 	allocateId,
 	type ExecutionInput,
@@ -141,10 +141,10 @@ export function execution(
 		)
 	}
 	if (!isAtOrAbove(entry.scope, scope)) {
-		const [runs, lives] = scopeNames(scope, entry.scope)
+		assertDistinctNames(scope, entry.scope, `Execution '${name}'`)
 		throw new DowelError(
 			'CAPTIVE_DEPENDENCY',
-			`Execution '${name}' runs in scope '${runs}' but its entry '${entry.name}' lives in '${lives}', which is not visible from there.`,
+			`Execution '${name}' runs in scope '${scope.name}' but its entry '${entry.name}' lives in '${entry.scope.name}', which is not visible from there.`,
 		)
 	}
 	const seen = new Map<SlotNode, string>()
@@ -164,11 +164,11 @@ export function execution(
 				`Execution '${name}' lists multi-binding '${slot.name}' as an input. Inputs are scoped slots each run supplies a value for.`,
 			)
 		}
-		if (!sameLineage(slot.scope, scope)) {
-			const [lives, runs] = scopeNames(slot.scope, scope)
+		if (slot.scope !== scope) {
+			assertDistinctNames(slot.scope, scope, `Execution '${name}'`)
 			throw new DowelError(
 				'INVALID_SCOPE',
-				`Execution '${name}' lists '${slot.name}' as an input, but it lives in scope '${lives}', not '${runs}'.`,
+				`Execution '${name}' lists '${slot.name}' as an input, but it lives in scope '${slot.scope.name}', not '${scope.name}'.`,
 			)
 		}
 		return { key, slot }

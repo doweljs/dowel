@@ -6,7 +6,7 @@ import type { ScopeAboveDependencies } from '../model/diagnostics.ts'
 import type { ComputeMeta, MetaOf, Resolved } from '../model/infer.ts'
 import type { CheckScopes, EffectiveScope, InferredScope } from '../model/scopes.ts'
 import { dependencyOf, scopeNode, usableScope } from '../nodes/coerce.ts'
-import { deeper, isAtOrAbove } from '../nodes/lineage.ts'
+import { assertDistinctNames, deeper, isAtOrAbove } from '../nodes/hierarchy.ts'
 import {
 	allocateId,
 	type Factory,
@@ -78,6 +78,7 @@ export function service(name: string, ...rest: unknown[]): unknown {
 		}
 		const next = deeper(inferred, scope)
 		if (next === null) {
+			assertDistinctNames(scope, inferred, `Service '${name}'`)
 			throw new DowelError(
 				'CAPTIVE_DEPENDENCY',
 				`Service '${name}' depends on '${key}' in scope '${scope.name}' and on another dependency in scope '${inferred.name}', which are on different scope branches.`,
@@ -88,6 +89,7 @@ export function service(name: string, ...rest: unknown[]): unknown {
 
 	const explicit = options?.scope === undefined ? null : scopeNode(options.scope)
 	if (explicit !== null && !isAtOrAbove(inferred, explicit)) {
+		assertDistinctNames(explicit, inferred, `Service '${name}'`)
 		throw new DowelError(
 			'CAPTIVE_DEPENDENCY',
 			deeper(inferred, explicit) === null

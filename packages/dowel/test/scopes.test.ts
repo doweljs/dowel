@@ -126,19 +126,44 @@ describe('nested scopes', () => {
 		expect(() => untyped(session).get(Handler)).toThrow(/not visible from 'session'/)
 	})
 
-	test('a scope with the same name but a different lineage is rejected', async () => {
+	test('another scope with the same name is not the declared child either', async () => {
 		const Impostor = scope('request')
 		const app = await container().provide(Handler).build()
 		const session = await app.open(SessionScope, bind(Sess, { id: 's' }))
 		await expect(untyped(session).open(Impostor)).rejects.toThrow(/not a child of 'session'/)
 	})
 
-	test('messages tell same-named scopes apart by lineage', () => {
+	test('two distinct scopes sharing a name are rejected wherever they meet', async () => {
 		const Impostor = scope('request')
 		const Fake = service('Fake', () => ({ url: '/' }), { scope: Impostor })
+		// Standing in for a node of the other scope.
 		expect(() => bind(Req, untyped(Fake))).toThrow(
-			/lives in scope 'root\/request', which 'Req' in 'root\/session\/request' cannot see/,
+			/The implementation of 'Req' meets two distinct scopes named 'request'/,
 		)
+		// Declared in one, depending on the other.
+		expect(() =>
+			service('Mixed', untyped({ req: Req }), (d: unknown) => d, { scope: untyped(Impostor) }),
+		).toThrow(/Service 'Mixed' meets two distinct scopes named 'request'/)
+		// Opened in place of the one the container was built with, from the right parent.
+		const Twin = scope('request', SessionScope)
+		const app = await container().provide(Handler).build()
+		const session = await app.open(SessionScope, bind(Sess, { id: 's' }))
+		await expect(untyped(session).open(Twin)).rejects.toThrow(
+			/Opening scope 'request' meets two distinct scopes named 'request'/,
+		)
+		// A namesake ancestor is caught too.
+		const OtherSession = scope('session')
+		const Nested = scope('request', OtherSession)
+		await expect(untyped(session).open(Nested)).rejects.toThrow(
+			/Opening scope 'request' meets two distinct scopes named 'session'/,
+		)
+		await app.dispose()
+	})
+
+	test('a scope cannot take the name of a scope above it', () => {
+		const Outer = scope('x')
+		expect(() => scope('x', Outer)).toThrow(/already the name of a scope above it/)
+		expect(() => scope('x', scope('y', Outer))).toThrow(/already the name of a scope above it/)
 	})
 
 	test('disposal is children first, then dependents before dependencies, in sequence', async () => {
@@ -177,15 +202,18 @@ describe('nested scopes', () => {
 		)
 	})
 
-	test('two distinct scopes with one lineage are rejected when the container is built', async () => {
-		// Declarations compare scopes by lineage, since a module evaluated twice declares a scope twice.
+	test('two distinct scopes with one name are rejected when they meet in a declaration, or in a container', async () => {
 		const A = scope('x')
 		const B = scope('x')
 		const Ta = slot('Ta', { scope: A })<number>()
 		const Tb = slot('Tb', { scope: B })<number>()
-		const S = service('S', untyped({ a: Ta, b: Tb }), () => 1)
-		await expect(untyped(container().provide(S)).build()).rejects.toThrow(
-			/Two distinct scopes are named 'x'/,
+		expect(() => service('S', untyped({ a: Ta, b: Tb }), () => 1)).toThrow(
+			/Service 'S' meets two distinct scopes named 'x'/,
+		)
+		const Sa = service('Sa', { a: Ta }, () => 1)
+		const Sb = service('Sb', { b: Tb }, () => 1)
+		await expect(untyped(container().provide(Sa, Sb)).build()).rejects.toThrow(
+			/The container meets two distinct scopes named 'x'/,
 		)
 	})
 })
