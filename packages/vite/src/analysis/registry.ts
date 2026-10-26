@@ -55,7 +55,7 @@ interface Entry {
 const nodeId = (declaration: Pick<Declaration, 'kind' | 'name'>): string =>
 	`${declaration.kind}:${declaration.name}`
 
-/** The runtime's name space for a declaration (see `keyOf` in `@doweljs/core/hot`). */
+/** The runtime's name space for a declaration: scopes apart from slots, services and executions. */
 const nameKey = (declaration: Pick<Declaration, 'kind' | 'name'>): string =>
 	declaration.kind === 'scope' ? `scope ${declaration.name}` : declaration.name
 

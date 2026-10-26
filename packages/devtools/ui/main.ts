@@ -57,7 +57,7 @@ function renderSelectors(): void {
 	}
 	const choices = containers().map((container) => ({
 		value: String(container.id),
-		label: `container #${container.id}${container.status.state === 'failed' ? ' (replacement failed)' : ''}`,
+		label: `container #${container.id}`,
 	}))
 	if (selectedContainer === null || !choices.some((choice) => choice.value === selectedContainer)) {
 		selectedContainer = choices[0]?.value ?? null

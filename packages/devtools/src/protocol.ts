@@ -3,9 +3,9 @@
  * in every environment, and the shape of what the page reads.
  */
 
-import type { ContainerSnapshot } from '@doweljs/core/hot'
+import type { NodeInfo } from '@doweljs/core'
 
-/** Sent by the server to every environment: report your containers. */
+/** Sent by the server to every environment: report the containers `track()` keeps. */
 export const INSPECT = 'dowel:inspect'
 
 export interface InspectMessage {
@@ -20,7 +20,14 @@ export interface StateMessage {
 	/** The request this answers. */
 	readonly request: number
 	readonly environment: string
-	readonly containers: readonly ContainerSnapshot[]
+	readonly containers: readonly TrackedContainer[]
+}
+
+/** A container `track()` keeps, as its client reports it. */
+export interface TrackedContainer {
+	/** Stable for as long as the container is kept. */
+	readonly id: number
+	readonly nodes: readonly NodeInfo[]
 }
 
 /**
@@ -28,7 +35,7 @@ export interface StateMessage {
  * environment (two tabs), their containers' ids are prefixed with the client
  * (`2.1`) to keep them apart.
  */
-export interface ReportedContainer extends Omit<ContainerSnapshot, 'id'> {
+export interface ReportedContainer extends Omit<TrackedContainer, 'id'> {
 	readonly id: number | string
 }
 

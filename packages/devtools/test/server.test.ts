@@ -16,7 +16,6 @@ interface FakeResponse {
 
 const dowel: DowelPluginApi = {
 	graph: () => ({ nodes: [], duplicates: [] }),
-	addClientModule: () => {},
 }
 
 /** Replies for a tab: to the request being made, unless another is named. */

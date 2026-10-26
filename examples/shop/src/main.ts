@@ -36,6 +36,15 @@ const app = await appBuilder({
 	.override(PaymentGateway, approveAll)
 	.build()
 
+// Every edit evaluates this module again: the container built before is
+// disposed, and the edited code builds the next one. The devtools see each.
+if (import.meta.hot) {
+	const { track } = await import('@doweljs/devtools/client')
+	track(app)
+	import.meta.hot.accept()
+	import.meta.hot.dispose(() => app.dispose())
+}
+
 await app.get(ProductRepository).seed([
 	{ id: 'p_tee', name: 'T-shirt', priceCents: 2500, stock: 10 },
 	{ id: 'p_mug', name: 'Mug', priceCents: 1200, stock: 2 },
@@ -57,7 +66,3 @@ print('catalog', await app.get(CatalogService).list())
 print('delivered receipts', await app.get(NotificationService).deliverPending())
 print('metrics', app.get(Metrics).snapshot())
 print('log', app.get(Logger).lines.join('\n'))
-
-if (import.meta.hot) {
-	import.meta.hot.dispose(() => app.dispose())
-}

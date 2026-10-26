@@ -5,7 +5,7 @@
  */
 
 import type { Container, ContainerBuilder } from './api.ts'
-import type { Composition } from './compile/compile.ts'
+import { type Composition, compile } from './compile/compile.ts'
 import type { Compiled } from './compile/plan.ts'
 import { DowelError } from './errors.ts'
 import type { EmptyState } from './model/state.ts'
@@ -13,7 +13,6 @@ import { declaredNode, implOf, nodeOf, slotNode } from './nodes/coerce.ts'
 import { assertImplScope } from './nodes/lineage.ts'
 import { describe, type ImplNode, type SlotNode } from './nodes/node.ts'
 import { RootContainer } from './runtime/containers.ts'
-import { compileWithHooks } from './runtime/hooks.ts'
 
 const EMPTY: Composition = {
 	roots: [],
@@ -85,14 +84,13 @@ class Builder {
 
 	/** A field, so a detached `build` still works. */
 	readonly build = (): Promise<Container> => {
-		const { composition } = this
 		let compiled: Compiled
 		try {
-			compiled = compileWithHooks(composition)
+			compiled = compile(this.composition)
 		} catch (error) {
 			return Promise.reject(error)
 		}
-		return RootContainer.create(composition, compiled)
+		return RootContainer.create(compiled)
 	}
 }
 

@@ -41,8 +41,6 @@ export { Internal as Hidden }
 		expect(byLocal.get('Internal')).toMatchObject({ kind: 'service', scope: null })
 		expect(result!.imports.get('Db')).toEqual({ source: './db', imported: 'Db' })
 		expect(result!.exports.get('Hidden')).toBe('Internal')
-		expect(result!.selfContained).toBe(true)
-		expect(result!.buildsContainer).toBe(false)
 	})
 
 	test('extracts scopes and executions', () => {
@@ -70,7 +68,6 @@ export const RunJob = execution('RunJob', { scope: Job, entry: Runner, inputs: {
 				{ key: 'input', ref: { local: 'JobInput', member: null }, optional: false },
 			],
 		})
-		expect(result!.selfContained).toBe(true)
 	})
 
 	test('follows import aliases of dowel exports', () => {
@@ -83,28 +80,6 @@ export const notANode = service('X', () => 1)
 `,
 		)
 		expect(result!.declarations.map((d) => d.name)).toEqual(['A', 'T'])
-		expect(result!.selfContained).toBe(false)
-	})
-
-	test('modules that build containers or export other values are not self-contained', () => {
-		const root = analyze(
-			'/app/main.ts',
-			`import { container, service } from '@doweljs/core'
-const A = service('A', () => 1)
-export const app = container().provide(A).build()
-`,
-		)
-		expect(root!.buildsContainer).toBe(true)
-		expect(root!.selfContained).toBe(false)
-
-		const mixed = analyze(
-			'/app/mixed.ts',
-			`import { service } from '@doweljs/core'
-export const A = service('A', () => 1)
-export function helper() {}
-`,
-		)
-		expect(mixed!.selfContained).toBe(false)
 	})
 
 	test('ignores modules that do not import dowel', () => {
@@ -150,7 +125,6 @@ export const Uow = service('Uow', () => 1, { scope: Request })
 			kind: 'service',
 			scopeRef: { local: 'Request', member: null },
 		})
-		expect(result!.selfContained).toBe(true)
 	})
 })
 
