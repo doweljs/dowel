@@ -3,10 +3,10 @@
  * callbacks it defers, and the signal that tells it to stop.
  */
 
-import type { ServiceContext } from '../api.ts'
-import { DowelError } from '../errors.ts'
-import { signalOf } from './dispose.ts'
-import type { Disposer, InstanceRecord, Store } from './store.ts'
+import type { ServiceContext } from '../../api.ts'
+import { DowelError } from '../../errors.ts'
+import { signalOf } from '../store/dispose.ts'
+import type { Disposer, InstanceRecord, Store } from '../store/store.ts'
 
 export function contextFor(name: string, record: InstanceRecord, store: Store): ServiceContext {
 	// Like AsyncDisposableStack, a disposed context accepts nothing more.

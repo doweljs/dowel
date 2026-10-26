@@ -356,7 +356,7 @@ class Compiler {
 				`Execution '${declared.name}' runs in scope '${child.name}' but its entry '${entry.name}' lives in '${entry.scope.name}', which is not visible from there.`,
 			)
 		}
-		const needs = this.needsOf(entry, childDraft)
+		const needs = this.runNeeds(entry, childDraft)
 		assertSupplied(declared, needs, slots)
 
 		const plan: ExecutionPlan = {
@@ -460,7 +460,7 @@ class Compiler {
 	 * `scope` or above resolves its slots from the run's store, so it is
 	 * followed for those; one opening below creates its own.
 	 */
-	private needsOf(entry: Plan, scope: ScopePlan): ScopeNeeds {
+	private runNeeds(entry: Plan, scope: ScopePlan): ScopeNeeds {
 		const { depth } = scope.scope
 		const reached = new Set<Plan>()
 		const required = new Set<string>()
