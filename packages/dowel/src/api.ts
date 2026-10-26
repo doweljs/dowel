@@ -61,9 +61,8 @@ export interface ServiceContext {
 	/** Run a callback when the instance is disposed. */
 	defer(dispose: () => void | PromiseLike<void>): void
 	/**
-	 * Aborted when disposal of the instance starts, or of its owner while the
-	 * factory is still running. Disposal waits for a running factory, so pass
-	 * this to slow startup work (connects, fetches) to let it stop promptly.
+	 * Aborted when disposal of the instance starts, even while its factory
+	 * still runs. Pass it to slow startup work, which disposal waits for.
 	 *
 	 * ```ts
 	 * const client = ctx.use(await connect(url, { signal: ctx.signal }))
@@ -74,24 +73,16 @@ export interface ServiceContext {
 
 /** What a run's body receives besides the entry. */
 export interface RunContext {
-	/**
-	 * Aborted when the container the runner was resolved from is disposed while
-	 * the body runs, or when the caller's `signal` aborts, with its reason.
-	 * Disposal waits for the body to settle, so a long-running body should stop
-	 * when this aborts.
-	 */
+	/** Aborted when the run's container is disposed or its caller's `signal` aborts. Disposal waits for the body, so stop when it does. */
 	readonly signal: AbortSignal
 }
 
 /** What a caller may pass a runner after the body. */
 export interface RunOptions {
 	/**
-	 * Cancels the run. Aborted before the body starts, the run creates nothing
-	 * more in its scope, disposes what it created and rejects with the
-	 * signal's reason; what it waits for in scopes above keeps going for
-	 * whoever shares it. Aborted while the body runs, it aborts the body's
-	 * signal and what the run opened beneath it; the run still waits for the
-	 * body and settles as the body does.
+	 * Cancels the run. Before the body starts, the run disposes what it created
+	 * and rejects with the signal's reason; while the body runs, the body's
+	 * signal aborts and the run settles as the body does.
 	 */
 	readonly signal?: AbortSignal | undefined
 }
@@ -122,17 +113,11 @@ export interface NodeInfo {
 	readonly status: 'idle' | 'pending' | 'ready' | null
 }
 
-/**
- * An immutable description of a container. Every method returns a new
- * builder, so partial compositions can be shared and extended freely.
- */
+/** An immutable description of a container; every method returns a new builder. */
 export interface ContainerBuilder<S extends ContainerState> {
 	/**
-	 * Add roots and bindings. Services, executions and slots given here are
-	 * activated at `build()` together with what they reach outside an
-	 * execution; what only an execution reaches is created by the first run
-	 * that needs it. Bindings only make implementations available and are
-	 * activated when reached.
+	 * Add roots and bindings. Roots and what they reach outside an execution
+	 * are created at `build()`; bindings take effect when reached.
 	 */
 	provide<const I extends readonly Providable[]>(
 		...items: I & KnownLength<I>
@@ -151,11 +136,9 @@ export interface ContainerBuilder<S extends ContainerState> {
 	): ContainerBuilder<Provide<S, Binding<T, BindingMetaOf<TM, I>>>>
 
 	/**
-	 * Replace a node in the graph. Dependents receive the replacement; the
-	 * original is never instantiated, and nothing that only it needed is
-	 * required any more. Intended for tests and environment specific swaps.
-	 * A service must be reachable from what is provided and a slot must be
-	 * bound by the time `build()` is called, in any order.
+	 * Replace a node in the graph: the original is never created and nothing
+	 * only it needed is required. The target must be reachable, or bound for
+	 * a slot, by `build()`.
 	 */
 	override<T, M extends ServiceMeta | SlotMeta, const I extends NoInfer<T> | ImplAt<T, M>>(
 		target: Overridable<T, M>,
@@ -174,11 +157,9 @@ export interface ContainerBuilder<S extends ContainerState> {
 	with<R>(compose: (builder: this) => R): R
 
 	/**
-	 * Build the container: activate every root and what it reaches, awaiting
-	 * async factories. Only callable once the composition has no issues,
-	 * every reachable root-scope slot is bound and every execution's inputs
-	 * are complete. If construction fails, everything created is disposed
-	 * before the returned promise rejects.
+	 * Build the container, creating every root and what it reaches. Callable
+	 * once the composition is complete; on failure, what was created is
+	 * disposed before the promise rejects.
 	 */
 	readonly build: [Issues<S>] extends [never]
 		? [Missing<S>] extends [never]
@@ -191,31 +172,22 @@ export interface ContainerBuilder<S extends ContainerState> {
 		: CompositionIssues<Issues<S>>
 }
 
-/**
- * A container: the one `build()` returns, for the `root` scope, or one opened
- * from it for a child scope with `open()`. Each sees its own scope and every
- * scope above it.
- */
+/** A container, for the `root` scope or one opened for a child scope; it sees its scope and those above. */
 export interface Container<
 	S extends ContainerState = ContainerState,
 	Current extends ScopeMeta = RootMeta,
 	/** Slots supplied to `open()` for this container and those it was opened from. */
 	Supplied extends string = never,
 > extends AsyncDisposable {
-	/**
-	 * Resolve a node visible from this scope that the container created with
-	 * itself: one provided, or reached from one outside an execution. Always
-	 * synchronous.
-	 */
+	/** Resolve a node this container created with itself. Always synchronous. */
 	get<N extends AnyService | AnySlot | AnyExecution>(
 		node: Resolvable<N, S, Current>,
 	): GetResult<N, S, Supplied>
 
 	/**
-	 * Open a container for a child scope. Required slots of that scope must be
-	 * supplied as value bindings. What the provided nodes reach in that scope
-	 * is initialized before the promise resolves; on failure it is disposed
-	 * first. What only executions reach is created when a run needs it.
+	 * Open a container for a child scope, with its required slots bound to
+	 * values. What the roots reach there is created before the promise
+	 * resolves; on failure it is disposed first.
 	 */
 	open<Sc extends AnyScope, const B extends readonly AnyBinding[]>(
 		scope: Sc & DeclaredScope<Sc> & ChildCheck<Current, Sc> & OpenCheck<S, MetaOf<Sc>['name'], B>,

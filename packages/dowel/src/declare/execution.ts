@@ -36,10 +36,9 @@ export type InputValues<Inputs> = { readonly [K in keyof Inputs]: Infer<Inputs[K
 type Body<E, R> = (entry: E, run: RunContext) => R | PromiseLike<R>
 
 /**
- * What a dependent receives for an execution: a function that opens a
- * container for the execution's scope with the given input values, hands the
- * entry to `body`, and disposes the container once `body` settles. Without
- * inputs it takes only the body. A `signal` in the options cancels the run.
+ * What a dependent receives for an execution: opens a container with the
+ * inputs, hands the entry to `body`, disposes the container once `body`
+ * settles. Without inputs it takes only the body; `signal` cancels the run.
  */
 export type Runner<E, Inputs> = [keyof Inputs] extends [never]
 	? <R>(body: Body<E, R>, options?: RunOptions) => Promise<R>
@@ -97,10 +96,8 @@ export type ComputeExecutionMeta<
 }
 
 /**
- * Declare work in a child scope a service can launch without holding the
- * container. The runner a dependent receives opens a container for the scope,
- * supplies the inputs, hands the entry to a body and disposes the container
- * when the body settles. Outstanding runs are disposed with their parent.
+ * Declare work in a child scope that a service launches through a runner.
+ * Outstanding runs are disposed with their parent.
  *
  * ```ts
  * const Job = execution('Job', { scope: JobScope, entry: JobRunner, inputs: { input: JobInput } })

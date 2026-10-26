@@ -1,12 +1,9 @@
-/**
- * Instance storage. Every container owns one store: the container `build()`
- * returns for scope `root`, and each opened container for its scope. A
- * resolution sees a chain of stores, indexed by scope depth.
- */
+/** Instance storage: one store per container, seen by a resolution as a chain indexed by scope depth. */
 
 import type { CachedPlan } from '../compile/plan.ts'
 import { DowelError } from '../errors.ts'
 import { ROOT, type ScopeNode } from '../nodes/node.ts'
+import type { cancelStore } from './cancel.ts'
 
 export const UNSET: unique symbol = Symbol('dowel.unset')
 
@@ -48,16 +45,11 @@ export interface Store {
 	/** Instances whose factory has not settled yet; their signals abort when the store is cancelled. */
 	readonly starting: Set<InstanceRecord>
 	/**
-	 * Set once the store stops starting factories: its initialization failed,
-	 * its disposal or an owner's began, or the caller of its run gave up. A
-	 * factory still waiting on its dependencies then never runs, and what
-	 * waits on a store above stops waiting. See `cancel.ts`.
+	 * Set once the store stops starting factories, by a failure, a disposal or its caller.
+	 * @see {@link cancelStore}
 	 */
 	cancelled: boolean
-	/**
-	 * Why it was cancelled, made when first asked, since most cancellations,
-	 * such as a run finishing, are never observed; `null` until then.
-	 */
+	/** Why it was cancelled, made when first asked; most cancellations are never observed. */
 	why: (() => unknown) | null
 	/** Called once it is cancelled; allocated when something first listens. */
 	cancelListeners: ((why: () => unknown) => void)[] | null
