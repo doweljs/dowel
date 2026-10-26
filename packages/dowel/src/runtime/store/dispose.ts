@@ -1,6 +1,6 @@
 /** Disposal of instances and stores. */
 
-import { DowelError, errorsOf, withCleanupFailures } from '../errors.ts'
+import { DowelError, errorsOf, withCleanupFailures } from '../../errors.ts'
 import { cancelStore } from './cancel.ts'
 import { clearStore, type InstanceRecord, type Store } from './store.ts'
 

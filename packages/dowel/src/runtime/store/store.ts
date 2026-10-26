@@ -4,9 +4,9 @@
  * resolution sees a chain of stores, indexed by scope depth.
  */
 
-import type { CachedPlan } from '../compile/plan.ts'
-import { DowelError } from '../errors.ts'
-import { ROOT, type ScopeNode } from '../nodes/node.ts'
+import type { CachedPlan, Plan } from '../../compile/plan.ts'
+import { DowelError } from '../../errors.ts'
+import { ROOT, type ScopeNode } from '../../nodes/node.ts'
 
 export const UNSET: unique symbol = Symbol('dowel.unset')
 
@@ -108,6 +108,11 @@ function store(
 export function clearStore(store: Store): void {
 	store.records.length = 0
 	store.cells.fill(UNSET)
+}
+
+/** The store of `plan`'s scope in `chain`, which must see it. */
+export function storeAt(plan: Plan, chain: Chain): Store {
+	return chain[plan.scope.depth] ?? notVisible(plan.name, plan.scope)
 }
 
 /** The one message for "this node lives in a scope the current container cannot see". */

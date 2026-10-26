@@ -1,6 +1,6 @@
 import type { NodeInfo } from '../api.ts'
 import { type BindingInfo, type Compiled, isCached, type Plan } from '../compile/plan.ts'
-import { type Chain, UNSET } from './store.ts'
+import { type Chain, UNSET } from './store/store.ts'
 
 /** Every node of a compiled graph, with the state of the instances visible from `chain`. */
 export function inspect(compiled: Compiled, chain: Chain): NodeInfo[] {

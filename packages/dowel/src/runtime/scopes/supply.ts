@@ -1,8 +1,8 @@
-import type { ScopePlan } from '../compile/plan.ts'
-import { DowelError } from '../errors.ts'
-import { assertDistinctNames } from '../nodes/hierarchy.ts'
-import { type BindingNode, ROOT } from '../nodes/node.ts'
-import type { Store } from './store.ts'
+import type { ScopePlan } from '../../compile/plan.ts'
+import { DowelError } from '../../errors.ts'
+import { assertDistinctNames } from '../../nodes/hierarchy.ts'
+import { type BindingNode, ROOT } from '../../nodes/node.ts'
+import type { Store } from '../store/store.ts'
 
 /** Writes the values a container was opened with into its store and checks nothing required is missing. */
 export function supply(

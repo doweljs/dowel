@@ -13,10 +13,12 @@ import type { ContainerState } from '../model/state.ts'
 import { bindingNode, declaredNode, scopeNode } from '../nodes/coerce.ts'
 import { assertDistinctNames } from '../nodes/hierarchy.ts'
 import { type BindingNode, ROOT, type ScopeNode } from '../nodes/node.ts'
-import { cancellation, cancelledBy, disposeStore, rewordCancellation } from './dispose.ts'
 import { inspect } from './inspect.ts'
-import { initialize, type OpenedStore, openStore, resolve } from './resolve.ts'
-import { type Chain, notVisible, rootStore, type Store } from './store.ts'
+import { initialize } from './instances/create.ts'
+import { resolve } from './resolve.ts'
+import { type OpenedStore, openStore } from './scopes/open.ts'
+import { cancellation, cancelledBy, disposeStore, rewordCancellation } from './store/dispose.ts'
+import { type Chain, notVisible, rootStore, type Store } from './store/store.ts'
 
 function lookup(compiled: Compiled, node: unknown): Plan {
 	const target = declaredNode(node, 'the node to resolve')
