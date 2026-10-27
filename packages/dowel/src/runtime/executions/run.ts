@@ -2,7 +2,13 @@
 
 import type { RunContext } from '../../api.ts'
 import type { ExecutionPlan } from '../../compile/plan.ts'
-import { DowelError, failuresOf, withCleanup, withCleanupFailures } from '../../errors.ts'
+import {
+	DisposalError,
+	DowelError,
+	failuresOf,
+	withCleanup,
+	withCleanupFailures,
+} from '../../errors.ts'
 import type { BindingNode } from '../../nodes/node.ts'
 import { resolve } from '../resolve.ts'
 import { openStore } from '../scopes/open.ts'
@@ -67,7 +73,14 @@ async function run(plan: ExecutionPlan, base: Chain, args: readonly unknown[]): 
 		() => opened.dispose(),
 		`Execution '${name}'`,
 	)
-	await opened.dispose()
+	// The body's work is done, so its value stays reachable to callers that must not repeat it.
+	await opened.dispose().catch((error: unknown) => {
+		throw new DisposalError(
+			`Execution '${name}' succeeded, but disposing its run failed. The body's result is on \`value\`.`,
+			value,
+			{ cause: error },
+		)
+	})
 	return value
 }
 
