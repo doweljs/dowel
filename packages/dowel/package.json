@@ -1,6 +1,6 @@
 {
 	"name": "@doweljs/core",
-	"version": "0.4.0",
+	"version": "0.5.0",
 	"description": "Type-complete dependency injection for TypeScript.",
 	"license": "MIT",
 	"repository": {

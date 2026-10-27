@@ -1,5 +1,11 @@
 # @doweljs/core
 
+## 0.5.0
+
+### Minor Changes
+
+- f70126c: feat: reject a run whose body succeeded but whose disposal failed with a `DisposalError` that carries the body's result
+
 ## 0.4.0
 
 ### Minor Changes
