@@ -35,6 +35,8 @@ export type DowelErrorCode =
 	| 'INVALID_NODE'
 	/** `ctx.use()` received a value without `Symbol.dispose` or `Symbol.asyncDispose`. */
 	| 'NOT_DISPOSABLE'
+	/** A run's body succeeded but disposing the run failed; thrown as a `DisposalError`. */
+	| 'DISPOSAL_FAILED'
 
 /** Every runtime failure dowel raises. Messages name the node as `Kind 'name'`, state the problem, then the remedy. */
 export class DowelError extends Error {
@@ -44,6 +46,16 @@ export class DowelError extends Error {
 	constructor(code: DowelErrorCode, message: string, options?: ErrorOptions) {
 		super(message, options)
 		this.code = code
+	}
+}
+
+/** A run's body succeeded with `value`, then disposing the run failed with `cause`. */
+export class DisposalError extends DowelError {
+	readonly value: unknown
+
+	constructor(message: string, value: unknown, options: ErrorOptions) {
+		super('DISPOSAL_FAILED', message, options)
+		this.value = value
 	}
 }
 

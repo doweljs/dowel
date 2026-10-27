@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import {
 	bind,
 	container,
+	DisposalError,
 	DowelError,
 	execution,
 	optional,
@@ -49,6 +50,50 @@ describe('executions', () => {
 			}),
 		).rejects.toThrow('body failed')
 		expect(log).toEqual(['disposed x'])
+	})
+
+	test("a failed disposal after a successful body rejects with the body's value", async () => {
+		const Conn = service('Conn', { input: JobInput }, (_, ctx) => {
+			ctx.defer(() => {
+				throw new Error('close failed')
+			})
+			return { commit: () => 'committed' }
+		})
+		const Commit = execution('Commit', {
+			scope: JobScope,
+			entry: Conn,
+			inputs: { input: JobInput },
+		})
+		const app = await container().provide(Commit).build()
+		const error = await app
+			.get(Commit)({ input: { id: 'c' } }, (conn) => conn.commit())
+			.catch((error: unknown) => error)
+		expect(error).toBeInstanceOf(DisposalError)
+		expect((error as DisposalError).code).toBe('DISPOSAL_FAILED')
+		expect((error as DisposalError).value).toBe('committed')
+		expect(((error as Error).cause as AggregateError).errors).toEqual([new Error('close failed')])
+	})
+
+	test('a failed body reports its own failure, not a DisposalError, when disposal fails too', async () => {
+		const Conn = service('Conn', { input: JobInput }, (_, ctx) => {
+			ctx.defer(() => {
+				throw new Error('close failed')
+			})
+			return {}
+		})
+		const Commit = execution('Commit', {
+			scope: JobScope,
+			entry: Conn,
+			inputs: { input: JobInput },
+		})
+		const app = await container().provide(Commit).build()
+		const error = await app
+			.get(Commit)({ input: { id: 'c' } }, () => {
+				throw new Error('body failed')
+			})
+			.catch((error: unknown) => error)
+		expect(error).not.toBeInstanceOf(DisposalError)
+		expect((error as AggregateError).errors[0]).toEqual(new Error('body failed'))
 	})
 
 	test('disposing the parent aborts a running body and waits for it before disposing beneath it', async () => {
