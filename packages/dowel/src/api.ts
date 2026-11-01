@@ -177,7 +177,8 @@ export interface ContainerBuilder<S extends ContainerState> {
 					: InputsBoundAtBuild<Simplify<BoundExecutionInputs<S>>>
 				: IncompleteExecutions<Simplify<MissingExecutionInputs<S>>>
 			: MissingBindings<Simplify<NeededBy<S['graph'], Missing<S>>>>
-		: CompositionIssues<Issues<S>>
+		: // Rebuilt by an unnamed mapped type so several issues print as their messages, not as `Issues<…>`.
+			CompositionIssues<{ readonly [I in Issues<S>]: I }[Issues<S>]>
 }
 
 /** A container, for the `root` scope or one opened for a child scope; it sees its scope and those above. */

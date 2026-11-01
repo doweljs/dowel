@@ -9,8 +9,11 @@ import {
 	type ContainerBuilder,
 	type ContainerState,
 	container,
+	execution,
+	type IncompleteExecutions,
 	type Infer,
 	type MissingBindings,
+	scope,
 	service,
 	slot,
 } from '../../src/index.ts'
@@ -164,4 +167,39 @@ test('with() applies composition functions', () => {
 	).toBeFunction()
 	const inline = container().with((b) => b.bind(Logger, { info() {} }).provide(Users))
 	expectTypeOf(inline.build).toBeFunction()
+})
+
+test('diagnostics list every name, not the type that computes them', () => {
+	// The types were always right; these also print as their members since the
+	// sets stopped coming from named aliases, which TypeScript prints by name.
+	const Orders = service('Orders', { log: Logger }, ({ log }) => log)
+	expectTypeOf(container().provide(Users, Orders).build).toEqualTypeOf<
+		MissingBindings<{ readonly Logger: 'Users' | 'Orders' }>
+	>()
+
+	const Clock = slot('Clock')<{ now(): number }>()
+	const Timed = service('Timed', { log: Logger, clock: Clock }, ({ log }) => log)
+	expectTypeOf(
+		container()
+			.provide(Timed)
+			.bind(Logger, { info() {} })
+			.bind(Logger, { info() {} })
+			.bind(Clock, { now: () => 0 })
+			.bind(Clock, { now: () => 1 }).build,
+	).toEqualTypeOf<
+		CompositionIssues<
+			| "'Logger' is bound twice; use override() to replace a binding"
+			| "'Clock' is bound twice; use override() to replace a binding"
+		>
+	>()
+
+	const Job = scope('job')
+	const X = slot('X', { scope: Job })<number>()
+	const Y = slot('Y', { scope: Job })<number>()
+	const Entry = service('Entry', { x: X, y: Y }, ({ x, y }) => x + y)
+	const Run = execution('Run', { scope: Job, entry: Entry })
+	const Runs = service('Runs', { run: Run }, ({ run }) => run)
+	expectTypeOf(container().provide(Runs).build).toEqualTypeOf<
+		IncompleteExecutions<{ readonly Run: 'X' | 'Y' }>
+	>()
 })
