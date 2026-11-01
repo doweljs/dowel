@@ -51,6 +51,16 @@ describe('inspect', () => {
 		expect(byName.get('SideSvc')!.status).toBeNull()
 	})
 
+	test('reports the slot a service declared with implements fills', async () => {
+		const Impl = Logger.implement('Impl', () => memoryLogger())
+		const Plain = service('Plain', () => 1)
+		const app = await container().provide(Logger, Plain).bind(Logger, Impl).build()
+		const byName = new Map(app.inspect().map((node) => [node.name, node]))
+		expect(byName.get('Impl')!.implements).toBe('Logger')
+		expect(byName.get('Plain')!.implements).toBeNull()
+		expect(byName.get('Logger')!.implements).toBeNull()
+	})
+
 	test('a disposed container no longer describes instances', async () => {
 		const One = service('One', () => 1)
 		const app = await container().provide(One).build()

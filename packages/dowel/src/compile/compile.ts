@@ -445,6 +445,7 @@ class Compiler {
 			many,
 			deps,
 			binding,
+			implements: node.kind === 'service' ? (node.implements?.name ?? null) : null,
 			plan,
 		})
 	}

@@ -38,6 +38,7 @@ export function inspect(compiled: Compiled, chain: Chain): NodeInfo[] {
 		many: node.many,
 		deps: node.deps.map((dep) => ({ key: dep.key, name: nameOf(dep.id) })),
 		binding: binding(node.binding),
+		implements: node.implements,
 		status: status(node.plan),
 	}))
 }

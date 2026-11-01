@@ -4,6 +4,7 @@
  * `~`-prefixed properties.
  */
 
+import type { SlotImplement } from '../declare/service.ts'
 import type { DeclaredName } from './checks.ts'
 import type { Graph } from './graph.ts'
 import type { BindingMetaOf, Impl } from './infer.ts'
@@ -61,6 +62,17 @@ export interface DeclaredSlot<T, M extends SlotMeta = SlotMeta> extends Slot<T, 
 	): Binding<T, BindingMetaOf<M, I>>
 	/** Depend on the slot without requiring it bound; the factory receives `undefined` when it is not. */
 	optional(): Optional<Slot<T, M>>
+	/**
+	 * Declare a service that fills the slot. The factory's result is checked
+	 * against the slot, so its parameters need no annotations.
+	 *
+	 * ```ts
+	 * const MemoryLinkStore = LinkStore.implement('MemoryLinkStore', () => ({
+	 *   get: async (code) => links.get(code),
+	 * }))
+	 * ```
+	 */
+	readonly implement: SlotImplement<T, M>
 }
 
 export type AnySlot = Slot<any, SlotMeta>

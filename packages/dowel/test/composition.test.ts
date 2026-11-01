@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { container, DowelError, execution, scope, service, slot } from '../src/index.ts'
+import { container, DowelError, execution, type Infer, scope, service, slot } from '../src/index.ts'
 import { Logger, memoryLogger, Request, untyped } from './support.ts'
 
 describe('multi-bindings', () => {
@@ -244,5 +244,31 @@ describe('slot methods', () => {
 		const Reads = service('Reads', { maybe: Maybe.optional() }, ({ maybe }) => maybe ?? 'unbound')
 		await using app = await container().provide(Reads).build()
 		expect(app.get(Reads)).toBe('unbound')
+	})
+})
+
+describe('Slot.implement', () => {
+	test('declares a service that binds to the slot like any other', async () => {
+		const Impl = Logger.implement('Impl', () => memoryLogger())
+		const Uses = service('Uses', { log: Logger }, ({ log }) => log)
+		await using app = await container().provide(Uses).bind(Logger, Impl).build()
+		expect(app.get(Uses)).toBe(app.get(Impl))
+	})
+
+	test('checks and documents, but does not restrict where the service is bound', async () => {
+		const Other = slot('Other')<Infer<typeof Logger>>()
+		const Impl = Logger.implement('Impl', () => memoryLogger())
+		await using app = await container().provide(Other).bind(Other, Impl).build()
+		expect(app.get(Other)).toBe(app.get(Impl))
+	})
+
+	test('rejects being called on what is not a slot', () => {
+		const NotASlot = service('NotASlot', () => 1)
+		expect(() => untyped(Logger.implement).call(NotASlot, 'Impl', () => 1)).toThrow(
+			expect.objectContaining({
+				code: 'INVALID_NODE',
+				message: "What 'Impl' implements is not a slot.",
+			} satisfies Partial<DowelError>),
+		)
 	})
 })

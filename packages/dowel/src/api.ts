@@ -109,6 +109,8 @@ export interface NodeInfo {
 	readonly many: boolean
 	readonly deps: readonly { readonly key: string; readonly name: string }[]
 	readonly binding: NodeBinding | null
+	/** For a service declared with `implements`, the slot it fills; `null` otherwise. */
+	readonly implements: string | null
 	/** Instance state for cached nodes visible from here; `null` otherwise. */
 	readonly status: 'idle' | 'pending' | 'ready' | null
 }

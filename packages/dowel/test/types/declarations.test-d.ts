@@ -430,3 +430,53 @@ test('optional slots', async () => {
 	scoped.open(PerRequest)
 	scoped.open(PerRequest, Session.of({ userId: '1' }))
 })
+
+test('Slot.implement types the factory by the slot', async () => {
+	// The parameters take their types from the slot, with no annotation.
+	const MemoryLogger = Logger.implement('MemoryLogger', () => ({ info: (message) => void message }))
+	expectTypeOf<Infer<typeof MemoryLogger>>().toEqualTypeOf<{
+		info: (message: string) => undefined
+	}>()
+	container().provide(Users).bind(Logger, MemoryLogger).build()
+
+	// The service keeps its own type: a fake can offer more than the slot asks for.
+	const Clock = slot('Clock')<{ now(): number }>()
+	const FakeClock = Clock.implement('FakeClock', () => {
+		let now = 0
+		return {
+			now: () => now,
+			set: (to: number) => {
+				now = to
+			},
+		}
+	})
+	expectTypeOf<Infer<typeof FakeClock>['set']>().toEqualTypeOf<(to: number) => void>()
+
+	// With dependencies, async, and with options after them.
+	const Lines = slot('Lines')<string[]>()
+	const AsyncLogger = Logger.implement('AsyncLogger', { lines: Lines }, async ({ lines }) => ({
+		info: (message) => void lines.push(message),
+	}))
+	const lines: string[] = []
+	container().provide(Users).bind(Logger, AsyncLogger).bind(Lines, lines).build()
+	const Scoped = Logger.implement('Scoped', {}, () => ({ info() {} }), { scope: PerRequest })
+	expectTypeOf<MetaOf<typeof Scoped>['scope']>().toEqualTypeOf<'request'>()
+
+	// A result that doesn't fit is an error at the declaration.
+	// @ts-expect-error: info must accept a string
+	Logger.implement('Wrong', () => ({ info: (count: number) => void count }))
+	// @ts-expect-error: info is missing
+	Logger.implement('Missing', () => ({ log() {} }))
+	// @ts-expect-error: the async result must fit too
+	Logger.implement('WrongAsync', { lines: Lines }, async () => ({ log() {} }))
+
+	// Without dependencies there are no options: pass {} to give them.
+	// @ts-expect-error: options need the dependencies argument
+	Logger.implement('NoDepsOptions', () => ({ info() {} }), { scope: PerRequest })
+
+	// A multi-binding slot is implemented one item at a time.
+	const Middleware = slot('Middleware', { many: true })<(input: string) => string>()
+	const Upper = Middleware.implement('Upper', () => (input) => input.toUpperCase())
+	expectTypeOf<Infer<typeof Upper>>().toEqualTypeOf<(input: string) => string>()
+	container().contribute(Middleware, Upper)
+})

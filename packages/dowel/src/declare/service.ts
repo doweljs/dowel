@@ -1,11 +1,11 @@
 import type { ServiceContext } from '../api.ts'
 import { DowelError } from '../errors.ts'
 import type { DeclaredNames, DeclaredScope, LiteralName } from '../model/checks.ts'
-import type { AnyScope, Deps, Service } from '../model/declarations.ts'
+import type { AnyScope, Deps, ItemOf, Service, SlotMeta } from '../model/declarations.ts'
 import type { ScopeAboveDependencies } from '../model/diagnostics.ts'
 import type { ComputeMeta, MetaOf, Resolved } from '../model/infer.ts'
 import type { CheckScopes, EffectiveScope, InferredScope } from '../model/scopes.ts'
-import { dependencyOf, scopeNode, usableScope } from '../nodes/coerce.ts'
+import { dependencyOf, scopeNode, slotNode, usableScope } from '../nodes/coerce.ts'
 import { assertDistinctNames, deeper, isAtOrAbove } from '../nodes/hierarchy.ts'
 import {
 	allocateId,
@@ -14,6 +14,7 @@ import {
 	ROOT,
 	type ScopeNode,
 	type ServiceNode,
+	type SlotNode,
 } from '../nodes/node.ts'
 
 type CheckScope<D extends Deps, Sc extends AnyScope> = InferredScope<D>['name'] extends
@@ -28,6 +29,36 @@ export interface ServiceOptions<D extends Deps, Sc extends AnyScope> {
 }
 
 type ExplicitScope<Sc extends AnyScope> = [Sc] extends [never] ? never : MetaOf<Sc>
+
+/** What an implementation of a slot produces: one item of a multi-binding, otherwise the slot's type. */
+type SlotValue<T, M extends SlotMeta> = M['many'] extends true ? ItemOf<T> : T
+
+/**
+ * `Slot.implement()`: a service that fills the slot. Its factory's result is
+ * checked against the slot, and the service keeps its own type, so a fake can
+ * offer more than the slot asks for.
+ *
+ * Without dependencies it takes no options, so the two forms never take the
+ * same number of arguments: an error is then reported against the only form
+ * that applies. Pass `{}` as the dependencies to give options.
+ */
+export interface SlotImplement<T, M extends SlotMeta> {
+	<N extends string, R extends SlotValue<T, M> | PromiseLike<SlotValue<T, M>>>(
+		name: LiteralName<N>,
+		factory: (ctx: ServiceContext) => R,
+	): Service<Awaited<R>, ComputeMeta<N, {}, EffectiveScope<{}, never>>>
+	<
+		N extends string,
+		const D extends Deps,
+		R extends SlotValue<T, M> | PromiseLike<SlotValue<T, M>>,
+		Sc extends AnyScope = never,
+	>(
+		name: LiteralName<N>,
+		deps: D & CheckScopes<D> & DeclaredNames<D>,
+		factory: (deps: Resolved<D>, ctx: ServiceContext) => R,
+		options?: ServiceOptions<D, Sc>,
+	): Service<Awaited<R>, ComputeMeta<N, D, EffectiveScope<D, ExplicitScope<Sc>>>>
+}
 
 /**
  * Declare a service. Its dependencies are values, so its requirements and
@@ -51,6 +82,11 @@ export function service<N extends string, const D extends Deps, R, Sc extends An
 	options?: ServiceOptions<D, Sc>,
 ): Service<Awaited<R>, ComputeMeta<N, D, EffectiveScope<D, ExplicitScope<Sc>>>>
 export function service(name: string, ...rest: unknown[]): unknown {
+	return declareService(name, rest, undefined)
+}
+
+/** What `service()` and `Slot.implement()` share; `slot` is the slot implemented, if any. */
+export function declareService(name: string, rest: unknown[], slot: unknown): unknown {
 	const standalone = typeof rest[0] === 'function'
 	const [deps, factory, options] = (
 		standalone
@@ -91,6 +127,15 @@ export function service(name: string, ...rest: unknown[]): unknown {
 	}
 	const scope = explicit ?? inferred
 
+	let implemented: SlotNode | null = null
+	if (slot !== undefined) {
+		try {
+			implemented = slotNode(slot)
+		} catch (cause) {
+			throw new DowelError('INVALID_NODE', `What '${name}' implements is not a slot.`, { cause })
+		}
+	}
+
 	const node: ServiceNode = {
 		kind: 'service',
 		id: allocateId(),
@@ -99,6 +144,7 @@ export function service(name: string, ...rest: unknown[]): unknown {
 		// Copied, so changing the object afterwards cannot change the graph its scope was checked against.
 		deps: Object.freeze({ ...deps }),
 		factory,
+		implements: implemented,
 	}
 	return Object.freeze({
 		'~kind': 'service',

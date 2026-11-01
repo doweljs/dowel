@@ -55,6 +55,7 @@ A slot also carries what can be done with it:
 
 - `Request.of(req)` binds it to a value or a service for `open()`, or contributes one item to a multi-binding.
 - `Metrics.optional()` depends on it without requiring it bound.
+- `Logger.implement(name, deps?, factory)` declares a service that fills it: see [Implementing a slot](#implementing-a-slot).
 
 ## Services
 
@@ -92,6 +93,21 @@ Service<UsersApi, {
 ```
 
 A service has one instance per container of its scope. The only option, `scope`, places a service deeper than its dependencies imply, such as one unit of work per request although it only needs the database; shallower is a compile error.
+
+### Implementing a slot
+
+A service that fills a slot can be declared from the slot. Its factory's result is checked against the slot, so the factory needs no annotations and a mismatch is reported where it's declared:
+
+```ts
+const LinkStore = slot('LinkStore')<{ get(code: string): Promise<Link | undefined> }>()
+
+const MemoryLinkStore = LinkStore.implement('MemoryLinkStore', () => {
+	const links = new Map<string, Link>()
+	return { get: async (code) => links.get(code) } // code: string
+})
+```
+
+It's an ordinary service otherwise: bound with `.bind(LinkStore, MemoryLinkStore)`, and free to fill any slot its type fits. It keeps its own type, so a test fake can offer controls the slot doesn't have. For a multi-binding slot, it is one item. Without dependencies it takes no options; pass `{}` as the dependencies to give a `scope`. `inspect()` reports the slot a service implements.
 
 ### Resources and disposal
 
@@ -217,7 +233,7 @@ Contributions resolve to a readonly array, in order; with none, to `[]`. `overri
 
 ## Introspection
 
-`inspect()` describes every node: its scope, dependencies, binding and instance status.
+`inspect()` describes every node: its scope, dependencies, binding, the slot it implements and instance status.
 
 ## Errors
 

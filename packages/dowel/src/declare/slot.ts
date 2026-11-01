@@ -6,6 +6,7 @@ import type { ScopeDescriptor } from '../model/scopes.ts'
 import { scopeNode, slotNode } from '../nodes/coerce.ts'
 import { allocateId, internal, ROOT, type SlotNode } from '../nodes/node.ts'
 import { bindingOf } from './bind.ts'
+import { declareService } from './service.ts'
 
 export type SlotAt<
 	T,
@@ -92,5 +93,8 @@ const slotMethods = {
 	optional(this: unknown): unknown {
 		slotNode(this)
 		return Object.freeze({ '~kind': 'optional', slot: this })
+	},
+	implement(this: unknown, name: string, ...rest: unknown[]): unknown {
+		return declareService(name, rest, this)
 	},
 }
