@@ -169,6 +169,8 @@ class Compiler {
 	}
 
 	private claimName(node: DeclaredNode): void {
+		// An unnamed implementation is never looked up by name, and several may share their slot's.
+		if (node.kind === 'service' && node.anonymous) return
 		const owner = this.names.get(node.name)
 		if (owner !== undefined && owner !== node.id) {
 			throw new DowelError(

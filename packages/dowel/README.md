@@ -59,7 +59,7 @@ A slot also carries what can be done with it:
 
 - `CurrentRequest.of(req)` binds it to a value or a service for `open()`, or contributes one item to a multi-binding.
 - `Metrics.optional()` depends on it without requiring it bound.
-- `Logger.implement(name, deps?, factory)` declares a service that fills it: see [Implementing a slot](#implementing-a-slot).
+- `Logger.implement(deps?, factory)` and `Logger.implementAs(name, deps?, factory)` declare a service that fills it: see [Implementing a slot](#implementing-a-slot).
 
 ## Services
 
@@ -105,13 +105,28 @@ A service that fills a slot can be declared from the slot. Its factory's result 
 ```ts
 const LinkStore = slot('LinkStore')<{ get(code: string): Promise<Link | undefined> }>()
 
-const MemoryLinkStore = LinkStore.implement('MemoryLinkStore', () => {
+const MemoryLinkStore = LinkStore.implement(() => {
 	const links = new Map<string, Link>()
 	return { get: async (code) => links.get(code) } // code: string
 })
+
+container().bind(LinkStore, MemoryLinkStore)
 ```
 
-It's an ordinary service otherwise: bound with `.bind(LinkStore, MemoryLinkStore)`, and free to fill any slot its type fits. It keeps its own type, so a test fake can offer controls the slot doesn't have. For a multi-binding slot, it is one item. Without dependencies it takes no options; pass `{}` as the dependencies to give a `scope`. `inspect()` reports the slot a service implements.
+`implement()` needs no name: the implementation stands for the slot it's bound to. Its dependencies are listed under that slot, so a missing one reads `MissingBindings<{ Config: "LinkStore" }>`. It can fill any slot its type fits, or several, as one instance; for a multi-binding slot, it's one item. It has no identity of its own, so nothing can depend on it, provide, resolve or override it; `inspect()` and runtime errors show it as `LinkStore (implementation)`.
+
+When something must refer to the implementation itself, name it with `implementAs()`. It's then an ordinary service that keeps its own type, so a test fake can offer controls the slot doesn't have:
+
+```ts
+const FakeClock = Clock.implementAs('FakeClock', () => {
+	let now = 0
+	return { now: () => now, set: (to: number) => void (now = to) }
+})
+
+app.get(FakeClock).set(1_000)
+```
+
+Without dependencies, neither takes options: pass `{}` as the dependencies to give a `scope`. `inspect()` reports the slot each service implements.
 
 ### Resources and disposal
 

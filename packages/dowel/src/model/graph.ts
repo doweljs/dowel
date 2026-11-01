@@ -111,7 +111,8 @@ export type ReachEager<G extends Graph, S extends string, Seen extends string = 
 /** Names that reachable services and executions depend on non-optionally. */
 // Narrow R here rather than making recursive traversal results prove a string constraint.
 export type RequiredBy<G extends Graph, R> = R extends keyof G
-	? G[R]['kind'] extends 'service' | 'execution'
+	? // A slot bound to an unnamed implementation lists the implementation's dependencies itself.
+		G[R]['kind'] extends 'service' | 'execution' | 'bound' | 'many' | 'alias'
 		? Exclude<G[R]['deps'], G[R]['optional']>
 		: never
 	: never
