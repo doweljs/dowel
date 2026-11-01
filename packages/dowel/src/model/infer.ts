@@ -7,6 +7,8 @@ import type {
 	Deps,
 	DepValues,
 	Execution,
+	Implementation,
+	ImplementationMeta,
 	ItemOf,
 	Optional,
 	Placement,
@@ -72,6 +74,20 @@ export type DependencyGraph<D extends Deps> = UnionToIntersection<
 	{ [K in keyof D]-?: GraphOf<D[K]> }[keyof D]
 > & {}
 
+/** The metadata of an unnamed implementation declared from the slot `SM`. */
+export type ImplementationMetaOf<
+	SM extends SlotMeta,
+	D extends Deps,
+	Sc extends ScopeDescriptor,
+> = {
+	readonly slot: SM['name']
+	readonly scope: Sc['name']
+	readonly above: Sc['above']
+	readonly deps: DepName<DepValues<D>>
+	readonly optional: OptionalOnlyName<DepValues<D>>
+	readonly graph: DependencyGraph<D>
+}
+
 /** Computes the metadata of a service from its declaration. */
 export type ComputeMeta<N extends string, D extends Deps, Sc extends ScopeDescriptor> = {
 	readonly name: N
@@ -100,41 +116,63 @@ export type ImplAt<T, Sc extends Placement> = Service<
 
 /** What `.bind()` and `Slot.of()` accept for a slot: the value, a service producing it, or for multi-bindings one item. */
 export type Impl<T, TM extends SlotMeta> = TM['many'] extends true
-	? NoInfer<ItemOf<T>> | ImplAt<ItemOf<T>, TM>
-	: NoInfer<T> | ImplAt<T, TM>
+	? NoInfer<ItemOf<T>> | ImplAt<ItemOf<T>, TM> | ImplementationAt<ItemOf<T>, TM>
+	: NoInfer<T> | ImplAt<T, TM> | ImplementationAt<T, TM>
+
+/** An unnamed implementation that may fill the slot `TM`: of its type, in its scope or above. */
+export type ImplementationAt<T, TM extends SlotMeta> = Implementation<
+	T,
+	ImplementationMeta & { readonly scope: TM['scope'] | TM['above'] }
+>
 
 type BindingEntry<
 	TM extends SlotMeta,
 	Kind extends 'bound' | 'value' | 'many',
 	Names extends string,
+	Optional extends string = never,
 > = {
 	readonly kind: Kind
 	readonly scope: TM['scope']
 	readonly above: TM['above']
 	readonly deps: Names
-	readonly optional: never
+	readonly optional: Optional
 	readonly child: never
 	readonly inputs: never
 }
 
-export type BindingMetaOf<TM extends SlotMeta, I> = {
+export type BindingMetaOf<TM extends SlotMeta, I> = (I extends Implementation<any, any>
+	? { readonly anonymous: true }
+	: {}) & {
 	readonly name: TM['name']
-	readonly graph: I extends Service<any, infer M>
+	// An unnamed implementation has no entry: its dependencies become the slot's.
+	readonly graph: I extends Implementation<any, infer M>
 		? MergeGraph<
 				M['graph'],
 				{
 					readonly [K in TM['name']]: BindingEntry<
 						TM,
 						TM['many'] extends true ? 'many' : 'bound',
-						M['name']
+						M['deps'],
+						M['optional']
 					>
 				}
 			>
-		: Simplify<{
-				readonly [K in TM['name']]: BindingEntry<
-					TM,
-					TM['many'] extends true ? 'many' : 'value',
-					never
+		: I extends Service<any, infer M>
+			? MergeGraph<
+					M['graph'],
+					{
+						readonly [K in TM['name']]: BindingEntry<
+							TM,
+							TM['many'] extends true ? 'many' : 'bound',
+							M['name']
+						>
+					}
 				>
-			}>
+			: Simplify<{
+					readonly [K in TM['name']]: BindingEntry<
+						TM,
+						TM['many'] extends true ? 'many' : 'value',
+						never
+					>
+				}>
 }

@@ -118,6 +118,8 @@ export interface GraphNode {
 	/** Dependencies by key, as node ids. */
 	readonly deps: readonly { readonly key: string; readonly id: number }[]
 	readonly binding: BindingInfo | null
+	/** For a service declared with `implements`, the slot's name. */
+	readonly implements: string | null
 	readonly plan: Plan
 }
 

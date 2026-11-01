@@ -4,6 +4,7 @@
  * `~`-prefixed properties.
  */
 
+import type { SlotImplement, SlotImplementAs } from '../declare/service.ts'
 import type { DeclaredName } from './checks.ts'
 import type { Graph } from './graph.ts'
 import type { BindingMetaOf, Impl } from './infer.ts'
@@ -61,6 +62,17 @@ export interface DeclaredSlot<T, M extends SlotMeta = SlotMeta> extends Slot<T, 
 	): Binding<T, BindingMetaOf<M, I>>
 	/** Depend on the slot without requiring it bound; the factory receives `undefined` when it is not. */
 	optional(): Optional<Slot<T, M>>
+	/**
+	 * Declare a service that fills a slot, typed by this one. Without a name,
+	 * it stands for the slot it's bound to.
+	 *
+	 * ```ts
+	 * const MemoryLinkStore = LinkStore.implement(() => ({ get: async (code) => links.get(code) }))
+	 * ```
+	 */
+	readonly implement: SlotImplement<T, M>
+	/** Declare a named service that fills a slot, typed by this one: for when something refers to the implementation itself. */
+	readonly implementAs: SlotImplementAs<T, M>
 }
 
 export type AnySlot = Slot<any, SlotMeta>
@@ -89,6 +101,23 @@ export interface Service<T, M extends ServiceMeta = ServiceMeta> {
 }
 
 export type AnyService = Service<any, ServiceMeta>
+
+/** A service declared with `Slot.implement()`, without a name: it stands for the slot it's bound to, and has no entry of its own. */
+export interface ImplementationMeta extends Placement {
+	/** The slot it was declared from. */
+	readonly slot: string
+	/** What its factory depends on, by name. */
+	readonly deps: string
+	readonly optional: string
+	/** Its dependencies' subgraph. */
+	readonly graph: Graph
+}
+
+export interface Implementation<T, M extends ImplementationMeta = ImplementationMeta> {
+	readonly '~kind': 'implementation'
+	readonly '~type'?: T
+	readonly '~meta'?: M
+}
 
 export interface ExecutionMeta extends Placement {
 	readonly name: string
@@ -123,6 +152,8 @@ export interface BindingMeta {
 	readonly name: string
 	/** The entry for the slot, merged with the implementation's subgraph. */
 	readonly graph: Graph
+	/** The implementation has no name: the slot's entry lists its dependencies instead. */
+	readonly anonymous?: true
 }
 
 /** A slot paired with its implementation, or a contribution to a multi-binding. Created by {@link bind}. */

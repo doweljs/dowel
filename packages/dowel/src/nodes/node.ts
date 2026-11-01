@@ -37,6 +37,10 @@ export interface ServiceNode {
 	readonly scope: ScopeNode
 	readonly deps: Deps
 	readonly factory: Factory
+	/** The slot the service was declared to fill, if any. */
+	readonly implements: SlotNode | null
+	/** Declared with `Slot.implement()`: it's only reached through the slots it's bound to. */
+	readonly anonymous: boolean
 }
 
 export interface ExecutionNode {

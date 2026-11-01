@@ -8,6 +8,8 @@ import type {
 	AnyService,
 	AnySlot,
 	Binding,
+	Implementation,
+	ImplementationMeta,
 	RootMeta,
 	ScopeMeta,
 	ServiceMeta,
@@ -109,6 +111,8 @@ export interface NodeInfo {
 	readonly many: boolean
 	readonly deps: readonly { readonly key: string; readonly name: string }[]
 	readonly binding: NodeBinding | null
+	/** For a service declared with `implements`, the slot it fills; `null` otherwise. */
+	readonly implements: string | null
 	/** Instance state for cached nodes visible from here; `null` otherwise. */
 	readonly status: 'idle' | 'pending' | 'ready' | null
 }
@@ -140,10 +144,14 @@ export interface ContainerBuilder<S extends ContainerState> {
 	 * only it needed is required. The target must be reachable, or bound for
 	 * a slot, by `build()`.
 	 */
-	override<T, M extends ServiceMeta | SlotMeta, const I extends NoInfer<T> | ImplAt<T, M>>(
-		target: Overridable<T, M>,
-		impl: I,
-	): ContainerBuilder<Override<S, TargetOf<M>, I>>
+	override<
+		T,
+		M extends ServiceMeta | SlotMeta,
+		const I extends
+			| NoInfer<T>
+			| ImplAt<T, M>
+			| Implementation<T, ImplementationMeta & { readonly scope: M['scope'] | M['above'] }>,
+	>(target: Overridable<T, M>, impl: I): ContainerBuilder<Override<S, TargetOf<M>, I>>
 
 	/**
 	 * Apply a reusable composition function. Write it generic in the state so

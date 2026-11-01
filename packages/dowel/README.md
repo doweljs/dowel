@@ -55,6 +55,7 @@ A slot also carries what can be done with it:
 
 - `Request.of(req)` binds it to a value or a service for `open()`, or contributes one item to a multi-binding.
 - `Metrics.optional()` depends on it without requiring it bound.
+- `Logger.implement(deps?, factory)` and `Logger.implementAs(name, deps?, factory)` declare a service that fills it: see [Implementing a slot](#implementing-a-slot).
 
 ## Services
 
@@ -92,6 +93,36 @@ Service<UsersApi, {
 ```
 
 A service has one instance per container of its scope. The only option, `scope`, places a service deeper than its dependencies imply, such as one unit of work per request although it only needs the database; shallower is a compile error.
+
+### Implementing a slot
+
+A service that fills a slot can be declared from the slot. Its factory's result is checked against the slot, so the factory needs no annotations and a mismatch is reported where it's declared:
+
+```ts
+const LinkStore = slot('LinkStore')<{ get(code: string): Promise<Link | undefined> }>()
+
+const MemoryLinkStore = LinkStore.implement(() => {
+	const links = new Map<string, Link>()
+	return { get: async (code) => links.get(code) } // code: string
+})
+
+container().bind(LinkStore, MemoryLinkStore)
+```
+
+`implement()` needs no name: the implementation stands for the slot it's bound to. Its dependencies are listed under that slot, so a missing one reads `MissingBindings<{ Config: "LinkStore" }>`. It can fill any slot its type fits, or several, as one instance; for a multi-binding slot, it's one item. It has no identity of its own, so nothing can depend on it, provide, resolve or override it; `inspect()` and runtime errors show it as `LinkStore (implementation)`.
+
+When something must refer to the implementation itself, name it with `implementAs()`. It's then an ordinary service that keeps its own type, so a test fake can offer controls the slot doesn't have:
+
+```ts
+const FakeClock = Clock.implementAs('FakeClock', () => {
+	let now = 0
+	return { now: () => now, set: (to: number) => void (now = to) }
+})
+
+app.get(FakeClock).set(1_000)
+```
+
+Without dependencies, neither takes options: pass `{}` as the dependencies to give a `scope`. `inspect()` reports the slot each service implements.
 
 ### Resources and disposal
 
@@ -217,7 +248,7 @@ Contributions resolve to a readonly array, in order; with none, to `[]`. `overri
 
 ## Introspection
 
-`inspect()` describes every node: its scope, dependencies, binding and instance status.
+`inspect()` describes every node: its scope, dependencies, binding, the slot it implements and instance status.
 
 ## Errors
 
