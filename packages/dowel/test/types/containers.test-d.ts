@@ -3,7 +3,7 @@
  * below are deliberately invalid and would throw at runtime.
  */
 import { expectTypeOf } from 'bun:test'
-import { bind, type Container, container, service } from '../../src/index.ts'
+import { type Container, container, service } from '../../src/index.ts'
 import {
 	Config,
 	CurrentUser,
@@ -37,14 +37,11 @@ test('get is checked against what the container holds', async () => {
 	// @ts-expect-error: Request value is required
 	app.open(PerRequest)
 	// @ts-expect-error: wrong value type
-	app.open(PerRequest, bind(Request, 1))
-	const reqBinding = bind(
-		Request,
-		service('ReqSvc', () => ({ url: '/' })),
-	)
+	app.open(PerRequest, Request.of(1))
+	const reqBinding = Request.of(service('ReqSvc', () => ({ url: '/' })))
 	// @ts-expect-error: scope bindings carry values, not services
 	app.open(reqBinding)
-	const s = await app.open(PerRequest, bind(Request, { url: '/' }))
+	const s = await app.open(PerRequest, Request.of({ url: '/' }))
 	expectTypeOf(s).toMatchTypeOf<Container<any, any>>()
 	expectTypeOf(s.get(CurrentUser).req).toEqualTypeOf<{ url: string }>()
 	expectTypeOf(s.get(Request)).toEqualTypeOf<{ url: string }>()

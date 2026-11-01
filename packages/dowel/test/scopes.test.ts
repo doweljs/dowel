@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { bind, container, optional, scope, service, slot } from '../src/index.ts'
+import { container, scope, service, slot } from '../src/index.ts'
 import { Logger, memoryLogger, nextTask, PerRequest, Request, untyped } from './support.ts'
 
 describe('scopes', () => {
@@ -10,8 +10,8 @@ describe('scopes', () => {
 
 	test('scoped slots are supplied per opened container, and scoped services cached per container', async () => {
 		const app = await container().provide(Current).bind(Logger, memoryLogger()).build()
-		const a = await app.open(PerRequest, bind(Request, { url: '/a' }))
-		const b = await app.open(PerRequest, bind(Request, { url: '/b' }))
+		const a = await app.open(PerRequest, Request.of({ url: '/a' }))
+		const b = await app.open(PerRequest, Request.of({ url: '/b' }))
 		expect(a.get(Current).url).toBe('/a')
 		expect(a.get(Current)).toBe(a.get(Current))
 		expect(b.get(Current).url).toBe('/b')
@@ -30,7 +30,7 @@ describe('scopes', () => {
 		const app = await container().provide(Current).bind(Logger, memoryLogger()).build()
 		await expect(untyped(app).open(PerRequest)).rejects.toThrow(/Slot 'Request' needs a value/)
 		const Impl = service('Impl', () => ({ url: '/' }))
-		await expect(untyped(app).open(PerRequest, bind(Request, Impl))).rejects.toThrow(/carry values/)
+		await expect(untyped(app).open(PerRequest, Request.of(Impl))).rejects.toThrow(/carry values/)
 	})
 
 	test('scoped slots bound at build time need not be supplied', async () => {
@@ -48,7 +48,7 @@ describe('scopes', () => {
 			return { id: `s:${req.url}` }
 		})
 		const app = await container().provide(Session).build()
-		const child = await app.open(PerRequest, bind(Request, { url: '/x' }))
+		const child = await app.open(PerRequest, Request.of({ url: '/x' }))
 		expect(child.get(Session).id).toBe('s:/x')
 	})
 
@@ -67,12 +67,12 @@ describe('scopes', () => {
 		const Session = slot('Session', { scope: PerRequest })<{ userId: string }>()
 		const Svc = service(
 			'Svc',
-			{ session: optional(Session) },
+			{ session: Session.optional() },
 			({ session }) => session?.userId ?? 'anon',
 		)
 		const app = await container().provide(Svc).build()
 		expect((await app.open(PerRequest)).get(Svc)).toBe('anon')
-		expect((await app.open(PerRequest, bind(Session, { userId: 'u1' }))).get(Svc)).toBe('u1')
+		expect((await app.open(PerRequest, Session.of({ userId: 'u1' }))).get(Svc)).toBe('u1')
 
 		// A required usage elsewhere makes the value required again.
 		const Strict = service('Strict', { session: Session }, ({ session }) => session.userId)
@@ -100,9 +100,9 @@ describe('nested scopes', () => {
 
 	test('session-scope instances are shared by the request scopes beneath them', async () => {
 		const app = await container().provide(Handler).build()
-		const session = await app.open(SessionScope, bind(Sess, { id: 's1' }))
-		const r1 = await session.open(RequestScope, bind(Req, { url: '/a' }))
-		const r2 = await session.open(RequestScope, bind(Req, { url: '/b' }))
+		const session = await app.open(SessionScope, Sess.of({ id: 's1' }))
+		const r1 = await session.open(RequestScope, Req.of({ url: '/a' }))
+		const r2 = await session.open(RequestScope, Req.of({ url: '/b' }))
 		expect(r1.get(Handler).handle()).toBe(1)
 		expect(r2.get(Handler).handle()).toBe(2)
 		expect(r1.get(Cart)).toBe(r2.get(Cart))
@@ -110,17 +110,17 @@ describe('nested scopes', () => {
 		expect(Cart.scope).toBe('session')
 		expect(Handler.scope).toBe('request')
 
-		const other = await app.open(SessionScope, bind(Sess, { id: 's2' }))
+		const other = await app.open(SessionScope, Sess.of({ id: 's2' }))
 		expect(other.get(Cart)).not.toBe(session.get(Cart))
 	})
 
 	test('scopes must be opened in order', async () => {
 		const app = await container().provide(Handler).build()
-		await expect(untyped(app).open(RequestScope, bind(Req, { url: '/' }))).rejects.toThrow(
+		await expect(untyped(app).open(RequestScope, Req.of({ url: '/' }))).rejects.toThrow(
 			/not a child of 'root'/,
 		)
-		const session = await app.open(SessionScope, bind(Sess, { id: 's' }))
-		await expect(untyped(session).open(SessionScope, bind(Sess, { id: 's' }))).rejects.toThrow(
+		const session = await app.open(SessionScope, Sess.of({ id: 's' }))
+		await expect(untyped(session).open(SessionScope, Sess.of({ id: 's' }))).rejects.toThrow(
 			/not a child of 'session'/,
 		)
 		expect(() => untyped(session).get(Handler)).toThrow(/not visible from 'session'/)
@@ -129,7 +129,7 @@ describe('nested scopes', () => {
 	test('another scope with the same name is not the declared child either', async () => {
 		const Impostor = scope('request')
 		const app = await container().provide(Handler).build()
-		const session = await app.open(SessionScope, bind(Sess, { id: 's' }))
+		const session = await app.open(SessionScope, Sess.of({ id: 's' }))
 		await expect(untyped(session).open(Impostor)).rejects.toThrow(/not a child of 'session'/)
 	})
 
@@ -137,7 +137,7 @@ describe('nested scopes', () => {
 		const Impostor = scope('request')
 		const Fake = service('Fake', () => ({ url: '/' }), { scope: Impostor })
 		// Standing in for a node of the other scope.
-		expect(() => bind(Req, untyped(Fake))).toThrow(
+		expect(() => Req.of(untyped(Fake))).toThrow(
 			/The implementation of 'Req' meets two distinct scopes named 'request'/,
 		)
 		// Declared in one, depending on the other.
@@ -147,7 +147,7 @@ describe('nested scopes', () => {
 		// Opened in place of the one the container was built with, from the right parent.
 		const Twin = scope('request', SessionScope)
 		const app = await container().provide(Handler).build()
-		const session = await app.open(SessionScope, bind(Sess, { id: 's' }))
+		const session = await app.open(SessionScope, Sess.of({ id: 's' }))
 		await expect(untyped(session).open(Twin)).rejects.toThrow(
 			/Opening scope 'request' meets two distinct scopes named 'request'/,
 		)
@@ -181,9 +181,9 @@ describe('nested scopes', () => {
 		})
 		const Both = service('Both', { t: Tracked, s: Shared }, () => 1)
 		const app = await container().provide(Both).build()
-		const session = await app.open(SessionScope, bind(Sess, { id: 's' }))
-		;(await session.open(RequestScope, bind(Req, { url: '/a' }))).get(Both)
-		;(await session.open(RequestScope, bind(Req, { url: '/b' }))).get(Both)
+		const session = await app.open(SessionScope, Sess.of({ id: 's' }))
+		;(await session.open(RequestScope, Req.of({ url: '/a' }))).get(Both)
+		;(await session.open(RequestScope, Req.of({ url: '/b' }))).get(Both)
 		await app.dispose()
 		expect(log).toEqual(['req /b', 'req /a', 'session'])
 	})
@@ -197,7 +197,7 @@ describe('nested scopes', () => {
 		expect(() =>
 			service('Shallow', { req: Req }, (d) => d, { scope: untyped(SessionScope) }),
 		).toThrow(/below it/)
-		expect(() => bind(Sess, untyped(service('Deep', { req: Req }, () => ({ id: '' }))))).toThrow(
+		expect(() => Sess.of(untyped(service('Deep', { req: Req }, () => ({ id: '' }))))).toThrow(
 			/which 'Sess' in 'session' cannot see/,
 		)
 	})
@@ -226,7 +226,7 @@ describe('nested scopes', () => {
 		const Twin = slot('Request', { scope: PerRequest })<string>()
 		const Needs = service('Needs', { req: Request }, ({ req }) => req.url)
 		const app = await container().provide(Needs).build()
-		await expect(untyped(app).open(PerRequest, bind(Twin, 'oops'))).rejects.toThrow(
+		await expect(untyped(app).open(PerRequest, Twin.of('oops'))).rejects.toThrow(
 			/Opening scope 'request' meets two distinct slots named 'Request'/,
 		)
 		await app.dispose()

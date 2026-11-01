@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { container, optional, service, slot } from '../src/index.ts'
+import { container, service, slot } from '../src/index.ts'
 import { gate, Logger, memoryLogger, nextTask, untyped } from './support.ts'
 
 describe('resolution', () => {
@@ -29,7 +29,7 @@ describe('resolution', () => {
 
 	test('optional slots resolve to undefined when unbound', async () => {
 		const Metrics = slot('Metrics')<{ count(): void }>()
-		const Svc = service('Svc', { metrics: optional(Metrics) }, ({ metrics }) => ({
+		const Svc = service('Svc', { metrics: Metrics.optional() }, ({ metrics }) => ({
 			has: metrics !== undefined,
 		}))
 		expect((await container().provide(Svc).build()).get(Svc).has).toBe(false)

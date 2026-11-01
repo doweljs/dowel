@@ -6,11 +6,9 @@ import { expectTypeOf } from 'bun:test'
 import type { Container } from '../../src/api.ts'
 import type { ServiceOptions } from '../../src/declare/service.ts'
 import {
-	bind,
 	container,
 	execution,
 	type Infer,
-	optional,
 	type Slot,
 	scope,
 	service,
@@ -161,14 +159,14 @@ test('a helper generic in the name can use what it declares', () => {
 		const Base = service(`${name}.base`, () => 1)
 		const Sum = service(
 			`${name}.sum`,
-			{ base: Base, input: Input, log: optional(Logger) },
+			{ base: Base, input: Input, log: Logger.optional() },
 			({ base, input }) => base + input,
 		)
 		const Run = execution(`${name}.run`, { scope: Work, entry: Sum, inputs: { input: Input } })
 		const Limit = slot(`${name}.limit`)<number>()
 		const Child = scope(`${name}.child`, scope(`${name}.parent`))
 		const Scoped = slot(`${name}.scoped`, { scope: Child })<number>()
-		const builder = container().provide(Run, bind(Limit, Base)).override(Base, 2)
+		const builder = container().provide(Run, Limit.of(Base)).override(Base, 2)
 		return { Input, Base, Run, Limit, Child, Scoped, builder }
 	}
 
@@ -189,7 +187,7 @@ test('a helper generic in the name can use what it declares', () => {
 	// @ts-expect-error: as an input
 	execution('Feeds', { scope: Work, entry: Users, inputs: { input: wide.Input } })
 	// @ts-expect-error: as a bound slot
-	bind(wide.Limit, 1)
+	wide.Limit.of(1)
 	// @ts-expect-error: as a scope
 	slot('InWide', { scope: wide.Child })
 	// The builder reports what it is given at build(), as it does other composition problems,
@@ -245,7 +243,7 @@ test('a helper generic in the name can use what it declares', () => {
 	// A binding it makes is checked where it is supplied.
 	const supplier = <const Name extends string>(name: Name) => {
 		const Supplied = slot(`${name}.supplied`, { scope: Work })<number>()
-		return { supply: (value: number) => bind(Supplied, value) }
+		return { supply: (value: number) => Supplied.of(value) }
 	}
 	const Real = slot('real.supplied', { scope: Work })<number>()
 	const opens = async () => {
@@ -254,7 +252,7 @@ test('a helper generic in the name can use what it declares', () => {
 			.build()
 		// @ts-expect-error: it would count as supplying 'real.supplied'
 		await app.open(Work, supplier('w' as string).supply(1))
-		await app.open(Work, bind(Real, 1))
+		await app.open(Work, Real.of(1))
 	}
 	void opens
 
@@ -312,7 +310,7 @@ test('slot and service inference', () => {
 })
 
 test('factory receives resolved dependencies', () => {
-	service('Check', { log: Logger, maybe: optional(Session), users: Users }, (deps, ctx) => {
+	service('Check', { log: Logger, maybe: Session.optional(), users: Users }, (deps, ctx) => {
 		expectTypeOf(deps.log).toEqualTypeOf<LoggerApi>()
 		expectTypeOf(deps.maybe).toEqualTypeOf<{ userId: string } | undefined>()
 		expectTypeOf(deps.users.list).toEqualTypeOf<() => string[]>()
@@ -326,11 +324,11 @@ test('factory receives resolved dependencies', () => {
 
 test('required and optional edges', () => {
 	const Metrics = slot('Metrics')<number>()
-	const Both = service('Both', { a: Metrics, b: optional(Metrics) }, ({ a }) => a)
+	const Both = service('Both', { a: Metrics, b: Metrics.optional() }, ({ a }) => a)
 	expectTypeOf<MetaOf<typeof Both>['graph']['Both']['optional']>().toEqualTypeOf<never>()
 	// @ts-expect-error: Metrics is still required
 	container().provide(Both).build()
-	const Loose = service('Loose', { m: optional(Metrics) }, ({ m }) => m)
+	const Loose = service('Loose', { m: Metrics.optional() }, ({ m }) => m)
 	expectTypeOf<MetaOf<typeof Loose>['graph']['Loose']['optional']>().toEqualTypeOf<'Metrics'>()
 	container().provide(Loose).build()
 })
@@ -356,7 +354,7 @@ test('union dependencies retain every possible requirement', () => {
 
 	const Maybe = service(
 		'Maybe',
-		{ either: optional(Math.random() > 0.5 ? LeftInput : RightInput) },
+		{ either: (Math.random() > 0.5 ? LeftInput : RightInput).optional() },
 		({ either }) => either,
 	)
 	expectTypeOf<keyof MetaOf<typeof Maybe>['graph']>().toEqualTypeOf<
@@ -394,12 +392,12 @@ test('conditionally present dependency keys retain their scopes and requirements
 })
 
 test('bind checks the implementation against the slot', () => {
-	bind(Logger, { info: () => {} })
+	Logger.of({ info: () => {} })
 	// @ts-expect-error: wrong shape
-	bind(Logger, { warn: () => {} })
+	Logger.of({ warn: () => {} })
 
 	const Pino = service('Pino', { config: Config }, () => ({ info: (_: string) => {} }))
-	type B = MetaOf<ReturnType<typeof bind<LoggerApi, MetaOf<typeof Logger>, typeof Pino>>>
+	type B = MetaOf<ReturnType<typeof Logger.of<typeof Pino>>>
 	expectTypeOf<B['name']>().toEqualTypeOf<'Logger'>()
 	expectTypeOf<B['graph']['Logger']['kind']>().toEqualTypeOf<'bound'>()
 	expectTypeOf<B['graph']['Logger']['deps']>().toEqualTypeOf<'Pino'>()
@@ -410,18 +408,15 @@ test('bind checks the implementation against the slot', () => {
 		info: (_: string) => {},
 	}))
 	// @ts-expect-error: a request-scoped implementation of a root slot
-	bind(Logger, ScopedLogger)
+	Logger.of(ScopedLogger)
 	// A scoped slot can be implemented by either.
-	bind(
-		Session,
-		service('S', { req: Request }, () => ({ userId: '1' })),
-	)
-	bind(Session, { userId: '1' })
+	Session.of(service('S', { req: Request }, () => ({ userId: '1' })))
+	Session.of({ userId: '1' })
 })
 
 test('optional slots', async () => {
 	const Metrics = slot('Metrics')<{ count(): void }>()
-	const Svc = service('Svc', { metrics: optional(Metrics) }, ({ metrics }) => metrics)
+	const Svc = service('Svc', { metrics: Metrics.optional() }, ({ metrics }) => metrics)
 	const app = await container().provide(Svc).build()
 	expectTypeOf(app.get(Metrics)).toEqualTypeOf<{ count(): void } | undefined>()
 	const bound = await container()
@@ -430,8 +425,8 @@ test('optional slots', async () => {
 		.build()
 	expectTypeOf(bound.get(Metrics)).toEqualTypeOf<{ count(): void }>()
 
-	const OptScoped = service('OptScoped', { session: optional(Session) }, ({ session }) => session)
+	const OptScoped = service('OptScoped', { session: Session.optional() }, ({ session }) => session)
 	const scoped = await container().provide(OptScoped).build()
 	scoped.open(PerRequest)
-	scoped.open(PerRequest, bind(Session, { userId: '1' }))
+	scoped.open(PerRequest, Session.of({ userId: '1' }))
 })

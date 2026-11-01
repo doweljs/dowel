@@ -26,7 +26,7 @@ export interface InputsBoundAtBuild<Executions> {
 
 /** `open()` was called without a value for a required scoped slot. */
 export interface MissingScopeValues<Slots> {
-	readonly 'dowel: supply these scoped slots with bind(); each lists what needs it': Slots
+	readonly 'dowel: supply these scoped slots with Slot.of(value); each lists what needs it': Slots
 }
 
 /** A binding passed to `open()` must carry a value, not a service. */

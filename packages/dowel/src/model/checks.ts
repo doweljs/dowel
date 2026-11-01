@@ -58,7 +58,7 @@ export type ScopeName<N extends string> =
 			: N
 
 /**
- * The status of each name in `X`: a node's, or in `optional()` its slot's;
+ * The status of each name in `X`: a node's, or in `Slot.optional()` its slot's;
  * `undefined` from an optional key has none. Matched on the `name` property
  * alone: matching whole dependency types against their metadata, against
  * `Optional<…>` or to rule out `any` would cost far more.

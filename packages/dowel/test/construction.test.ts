@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { bind, container, service, slot } from '../src/index.ts'
+import { container, service, slot } from '../src/index.ts'
 import { nextTask, PerRequest, Request } from './support.ts'
 
 describe('construction failure', () => {
@@ -90,9 +90,9 @@ describe('construction failure', () => {
 			throw new Error('nope')
 		})
 		const app = await container().provide(Broken).build()
-		await expect(app.open(PerRequest, bind(Request, { url: '/' }))).rejects.toThrow('nope')
+		await expect(app.open(PerRequest, Request.of({ url: '/' }))).rejects.toThrow('nope')
 		expect(log).toEqual(['fine'])
-		await expect(app.open(PerRequest, bind(Request, { url: '/' }))).rejects.toThrow('nope')
+		await expect(app.open(PerRequest, Request.of({ url: '/' }))).rejects.toThrow('nope')
 		await app.dispose()
 	})
 

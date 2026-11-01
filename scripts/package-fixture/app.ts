@@ -4,12 +4,10 @@
  * from the package entry alone.
  */
 import {
-	bind,
 	type ContainerBuilder,
 	type ContainerState,
 	container,
 	execution,
-	optional,
 	scope,
 	service,
 	slot,
@@ -32,7 +30,7 @@ export const Db = service('Db', async (ctx) => {
 export const Users = service('Users', { db: Db, log: Log, plugins: Plugins }, ({ db }) => ({
 	list: () => db.query('select'),
 }))
-export const Current = service('Current', { req: Req, log: optional(Log) }, ({ req }) => req.url)
+export const Current = service('Current', { req: Req, log: Log.optional() }, ({ req }) => req.url)
 export const UnitOfWork = service('UnitOfWork', { db: Db }, ({ db }) => db, { scope: PerRequest })
 
 export const Job = scope('job')
@@ -41,7 +39,7 @@ export const Runner = service('Runner', { input: Input, users: Users }, ({ input
 export const Run = execution('Run', { scope: Job, entry: Runner, inputs: { input: Input } })
 export const Plain = execution('Plain', { scope: Job, entry: Users })
 
-export const consoleLog = bind(Log, console)
+export const consoleLog = Log.of(console)
 export const infra = <S extends ContainerState>(b: ContainerBuilder<S>) => b.bind(Log, console)
 export const fakeDb = <S extends ContainerState>(b: ContainerBuilder<S>) =>
 	b.override(Db, { query: (sql: string) => [sql], close: async () => {} })
@@ -53,5 +51,5 @@ export const testing = builder.with(fakeDb)
 
 export const app = await builder.build()
 export const session = await app.open(Session)
-export const request = await session.open(PerRequest, bind(Req, { url: '/' }))
+export const request = await session.open(PerRequest, Req.of({ url: '/' }))
 export const run = app.get(Run)

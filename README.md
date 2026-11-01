@@ -14,11 +14,11 @@ const Users = service('Users', { db: Db, log: Logger }, ({ db, log }) => ({
 	},
 }))
 
-// Remove the bind() and build() stops being callable: MissingBindings<{ Logger: "Users" }>
+// Remove the .bind() and build() stops being callable: MissingBindings<{ Logger: "Users" }>
 const app = await container().provide(Users).bind(Logger, console).build()
 
 // A container for one request, disposed at the end of the block.
-await using request = await app.open(PerRequest, bind(Request, req))
+await using request = await app.open(PerRequest, Request.of(req))
 ```
 
 [`examples/shop`](examples/shop) is the service layer of a storefront: about 40 nodes, async infrastructure, request-scoped services, and tests that `override()` the production composition with fakes. Run `bun run dev` inside it.

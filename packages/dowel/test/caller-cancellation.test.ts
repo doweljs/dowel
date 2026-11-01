@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { bind, container, execution, scope, service, slot } from '../src/index.ts'
+import { container, execution, scope, service, slot } from '../src/index.ts'
 import { gate, PerRequest, Request, untyped } from './support.ts'
 
 describe('caller cancellation', () => {
@@ -275,7 +275,7 @@ describe('caller cancellation', () => {
 		caller.abort(reason)
 		await expect(waiting).rejects.toBe(reason)
 		ready.open()
-		const request = await app.open(PerRequest, bind(Request, { url: '/b' }))
+		const request = await app.open(PerRequest, Request.of({ url: '/b' }))
 		expect(await request.get(Handler)((pool) => pool)).toBe('pool')
 		expect(created).toBe(1)
 	})

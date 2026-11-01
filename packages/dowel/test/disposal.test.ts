@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { bind, container, type DowelError, service, slot } from '../src/index.ts'
+import { container, type DowelError, service, slot } from '../src/index.ts'
 import { gate, nextTask, PerRequest, Request, untyped } from './support.ts'
 
 describe('ownership and disposal', () => {
@@ -18,7 +18,7 @@ describe('ownership and disposal', () => {
 			return 's'
 		})
 		const app = await container().provide(S).build()
-		const child = await app.open(PerRequest, bind(Request, { url: '/' }))
+		const child = await app.open(PerRequest, Request.of({ url: '/' }))
 		child.get(S)
 		await app.dispose()
 		expect(log).toEqual(['S', 'B', 'A'])
@@ -67,11 +67,11 @@ describe('ownership and disposal', () => {
 		const shared = { closed: 0, [Symbol.dispose]() {} }
 		const Holder = service('Holder', { req: Req }, (_, ctx) => ctx.use(shared))
 		const app = await container().provide(Holder).build()
-		const first = await app.open(PerRequest, bind(Req, 1))
+		const first = await app.open(PerRequest, Req.of(1))
 		expect(first.get(Holder)).toBe(shared)
-		await expect(untyped(app).open(PerRequest, bind(Req, 2))).rejects.toThrow(/already owns/)
+		await expect(untyped(app).open(PerRequest, Req.of(2))).rejects.toThrow(/already owns/)
 		await first.dispose()
-		expect((await app.open(PerRequest, bind(Req, 3))).get(Holder)).toBe(shared)
+		expect((await app.open(PerRequest, Req.of(3))).get(Holder)).toBe(shared)
 	})
 
 	test('disposing an opened container removes it from its parent', async () => {
@@ -81,13 +81,13 @@ describe('ownership and disposal', () => {
 			return 1
 		})
 		const app = await container().provide(S).build()
-		const child = await app.open(PerRequest, bind(Request, { url: '/' }))
+		const child = await app.open(PerRequest, Request.of({ url: '/' }))
 		await child.dispose()
 		await child.dispose()
 		await app.dispose()
 		expect(log).toEqual(['S'])
 		expect(() => child.get(S)).toThrow(/disposed/)
-		await expect(untyped(app).open(PerRequest, bind(Request, { url: '/' }))).rejects.toThrow(
+		await expect(untyped(app).open(PerRequest, Request.of({ url: '/' }))).rejects.toThrow(
 			/disposed/,
 		)
 	})
@@ -118,9 +118,9 @@ describe('ownership and disposal', () => {
 			return 1
 		})
 		const app = await container().provide(Slow).build()
-		await app.open(PerRequest, bind(Req, 1))
+		await app.open(PerRequest, Req.of(1))
 		const disposing = app.dispose()
-		await expect(untyped(app).open(PerRequest, bind(Req, 2))).rejects.toThrow(/disposed/)
+		await expect(untyped(app).open(PerRequest, Req.of(2))).rejects.toThrow(/disposed/)
 		release.open()
 		await disposing
 	})
@@ -139,7 +139,7 @@ describe('ownership and disposal', () => {
 			return {}
 		})
 		const app = await container().provide(Tx).build()
-		const child = await app.open(PerRequest, bind(Request, { url: '/' }))
+		const child = await app.open(PerRequest, Request.of({ url: '/' }))
 		child.get(Tx)
 		await Promise.all([child.dispose(), app.dispose()])
 		expect(log).toEqual(['tx flushed', 'pool closed'])
@@ -160,7 +160,7 @@ describe('ownership and disposal', () => {
 			return {}
 		})
 		const app = await container().provide(Slow).build()
-		const opening = app.open(PerRequest, bind(Request, { url: '/' }))
+		const opening = app.open(PerRequest, Request.of({ url: '/' }))
 		await started.promise
 		const disposing = app.dispose()
 		release.open()
@@ -182,7 +182,7 @@ describe('ownership and disposal', () => {
 			})
 		})
 		const app = await container().provide(Connect).build()
-		const opening = app.open(PerRequest, bind(Request, { url: '/' }))
+		const opening = app.open(PerRequest, Request.of({ url: '/' }))
 		await started.promise
 		await app.dispose()
 		expect((reason as DowelError).code).toBe('DISPOSED')
@@ -205,7 +205,7 @@ describe('ownership and disposal', () => {
 	test('disposing the container while a scope opens rejects the open', async () => {
 		const Sync = service('Sync', { req: Request }, ({ req }) => req.url)
 		const app = await container().provide(Sync).build()
-		const opening = app.open(PerRequest, bind(Request, { url: '/' }))
+		const opening = app.open(PerRequest, Request.of({ url: '/' }))
 		const disposal = app.dispose()
 		await expect(opening).rejects.toThrow(/Scope 'request' was disposed while it opened/)
 		await disposal
@@ -214,7 +214,7 @@ describe('ownership and disposal', () => {
 	test('a container refuses work as soon as its disposal starts', async () => {
 		const Sync = service('Sync', { req: Request }, ({ req }) => req.url)
 		const app = await container().provide(Sync).build()
-		const request = await app.open(PerRequest, bind(Request, { url: '/' }))
+		const request = await app.open(PerRequest, Request.of({ url: '/' }))
 		const disposal = request.dispose()
 		expect(() => request.get(Sync)).toThrow(/has been disposed/)
 		expect(() => request.inspect()).toThrow(/has been disposed/)

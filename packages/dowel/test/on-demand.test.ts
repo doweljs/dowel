@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { bind, container, DowelError, execution, scope, service, slot } from '../src/index.ts'
+import { container, DowelError, execution, scope, service, slot } from '../src/index.ts'
 import { gate, nextTask, PerRequest, Request, untyped } from './support.ts'
 
 describe('services reached only through executions', () => {
@@ -101,7 +101,7 @@ describe('services reached only through executions', () => {
 			handle: () => record((audit) => audit('handled')),
 		}))
 		const app = await container().provide(Handler).build()
-		const request = await app.open(PerRequest, bind(Request, { url: '/a' }))
+		const request = await app.open(PerRequest, Request.of({ url: '/a' }))
 		expect(events).toEqual([])
 		expect(await request.get(Handler).handle()).toBe('/a: handled')
 		expect(await request.get(Handler).handle()).toBe('/a: handled')
@@ -147,7 +147,7 @@ describe('services reached only through executions', () => {
 		const app = await container().provide(Handler).bind(Config, { from: 'config' }).build()
 		expect(app.get(Config)).toEqual({ from: 'config' })
 		expect(app.get(Inner)).toBeInstanceOf(Function)
-		const request = await app.open(PerRequest, bind(Request, { url: '/a' }))
+		const request = await app.open(PerRequest, Request.of({ url: '/a' }))
 		expect(request.get(Request)).toEqual({ url: '/a' })
 	})
 
@@ -165,14 +165,14 @@ describe('services reached only through executions', () => {
 		const Query = execution('Query', { scope: Task, entry: Pool })
 		const Handler = service('Handler', { request: Request, query: Query }, ({ query }) => query)
 		const app = await container().provide(Handler).build()
-		const first = await app.open(PerRequest, bind(Request, { url: '/a' }))
+		const first = await app.open(PerRequest, Request.of({ url: '/a' }))
 		const waiting = first.get(Handler)((pool) => pool)
 		await starting.promise
 		// Disposal neither waits for the shared creation nor aborts it.
 		await first.dispose()
 		await expect(waiting).rejects.toThrow(/disposed before its body started/)
 		ready.open()
-		const second = await app.open(PerRequest, bind(Request, { url: '/b' }))
+		const second = await app.open(PerRequest, Request.of({ url: '/b' }))
 		expect(await second.get(Handler)((pool) => pool)).toBe('pool')
 		expect(created).toBe(1)
 	})
@@ -243,7 +243,7 @@ describe('services reached only through executions', () => {
 		const Query = execution('Query', { scope: Task, entry: Both })
 		const Handler = service('Handler', { request: Request, query: Query }, ({ query }) => query)
 		const app = await container().provide(Handler).build()
-		const request = await app.open(PerRequest, bind(Request, { url: '/a' }))
+		const request = await app.open(PerRequest, Request.of({ url: '/a' }))
 		const running = request.get(Handler)((both) => both)
 		// The request-scoped service does not wait for the slow root one to finish.
 		await Promise.all([poolStarted.promise, auditStarted.promise])

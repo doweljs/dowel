@@ -1,12 +1,18 @@
 import type { DeclaredScope, LiteralName } from '../model/checks.ts'
-import type { AnyScope, AnySlot, Optional, RootMeta, Slot } from '../model/declarations.ts'
+import type { AnyScope, AnySlot, DeclaredSlot, RootMeta } from '../model/declarations.ts'
 import type { EmptySlotOptions, MaybeMany, MaybeMissingScope } from '../model/diagnostics.ts'
 import type { MetaOf } from '../model/infer.ts'
 import type { ScopeDescriptor } from '../model/scopes.ts'
 import { scopeNode, slotNode } from '../nodes/coerce.ts'
 import { allocateId, internal, ROOT, type SlotNode } from '../nodes/node.ts'
+import { bindingOf } from './bind.ts'
 
-export type SlotAt<T, N extends string, Sc extends ScopeDescriptor, Many extends boolean> = Slot<
+export type SlotAt<
+	T,
+	N extends string,
+	Sc extends ScopeDescriptor,
+	Many extends boolean,
+> = DeclaredSlot<
 	T,
 	{ readonly name: N; readonly scope: Sc['name']; readonly above: Sc['above']; readonly many: Many }
 >
@@ -67,12 +73,24 @@ export function slot(name: string, options?: SlotOptions): () => unknown {
 	const many = options?.many === true
 	// One slot per declaration: the call that gives it its type returns the same slot every time.
 	const node: SlotNode = { kind: 'slot', id: allocateId(), name, scope, many }
-	const declared = Object.freeze({ '~kind': 'slot', name, scope: scope.name, [internal]: node })
+	const declared = Object.freeze(
+		Object.assign(Object.create(slotMethods), {
+			'~kind': 'slot',
+			name,
+			scope: scope.name,
+			[internal]: node,
+		}),
+	)
 	return () => declared as AnySlot
 }
 
-/** Depend on a slot without requiring it bound; the factory receives `undefined` when it is not. */
-export function optional<G extends AnySlot>(target: G): Optional<G> {
-	slotNode(target)
-	return Object.freeze({ '~kind': 'optional', slot: target })
+/** What every slot can do, shared rather than copied onto each. */
+const slotMethods = {
+	of(this: unknown, impl: unknown): unknown {
+		return bindingOf(this, impl)
+	},
+	optional(this: unknown): unknown {
+		slotNode(this)
+		return Object.freeze({ '~kind': 'optional', slot: this })
+	},
 }

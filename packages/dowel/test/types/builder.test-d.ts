@@ -4,7 +4,6 @@
  */
 import { expectTypeOf } from 'bun:test'
 import {
-	bind,
 	type CompositionIssues,
 	type Container,
 	type ContainerBuilder,
@@ -41,7 +40,7 @@ test('multi-bindings', () => {
 	// @ts-expect-error: Logger is now required
 	container().provide(Server).contribute(Middleware, Auth).build()
 	// @ts-expect-error: wrong item type
-	bind(Middleware, 1)
+	Middleware.of(1)
 })
 
 test('build is only callable when every reachable root slot is bound, and says who needs what', () => {

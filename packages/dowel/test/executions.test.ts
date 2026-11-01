@@ -1,11 +1,9 @@
 import { describe, expect, test } from 'bun:test'
 import {
-	bind,
 	container,
 	DisposalError,
 	DowelError,
 	execution,
-	optional,
 	scope,
 	service,
 	slot,
@@ -254,8 +252,8 @@ describe('executions', () => {
 		const Task = scope('task', PerRequest)
 		const RequestJob = execution('RequestJob', { scope: Task, entry: Clock })
 		const app = await container().provide(RequestJob).build()
-		const first = await app.open(PerRequest, bind(Request, { url: '/first' }))
-		const second = await app.open(PerRequest, bind(Request, { url: '/second' }))
+		const first = await app.open(PerRequest, Request.of({ url: '/first' }))
+		const second = await app.open(PerRequest, Request.of({ url: '/second' }))
 		const producer = first.get(RequestJob)(untilAborted(events, 'producer'))
 		// The newer container is disposed first, and its run waits on a run in the older one.
 		const consumer = second.get(RequestJob)(async () => {
@@ -601,20 +599,20 @@ describe('executions', () => {
 		const Bound = slot('Bound', { scope: JobScope })<number>()
 		const Reader = service('Reader', { bound: Bound }, ({ bound }) => bound)
 		const app = await container().provide(Reader).bind(Bound, 1).build()
-		await expect(untyped(app).open(JobScope, bind(Bound, 2))).rejects.toThrow(/bound at build/)
+		await expect(untyped(app).open(JobScope, Bound.of(2))).rejects.toThrow(/bound at build/)
 	})
 
 	test('scopes reject values for slots they cannot supply', async () => {
 		const JobSlot = slot('JobSlot', { scope: JobScope })<number>()
 		const Flag = slot('Flag')<boolean>()
-		const Uses = service('Uses', { job: JobSlot, flag: optional(Flag) }, (d) => d, {
+		const Uses = service('Uses', { job: JobSlot, flag: Flag.optional() }, (d) => d, {
 			scope: JobScope,
 		})
 		const app = await container().provide(Uses).build()
-		await expect(untyped(app).open(PerRequest, bind(JobSlot, 1))).rejects.toThrow(
+		await expect(untyped(app).open(PerRequest, JobSlot.of(1))).rejects.toThrow(
 			/lives in scope 'job', so opening 'request' cannot supply it/,
 		)
-		await expect(untyped(app).open(JobScope, bind(JobSlot, 1), bind(Flag, true))).rejects.toThrow(
+		await expect(untyped(app).open(JobScope, JobSlot.of(1), Flag.of(true))).rejects.toThrow(
 			/lives in scope 'root'.*Bind it at build/,
 		)
 	})
