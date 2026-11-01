@@ -10,7 +10,7 @@ export interface Queue {
 
 export const Queue = slot('Queue')<Queue>()
 
-export const MemoryQueue = Queue.implement('MemoryQueue', { log: Logger }, ({ log }, ctx) => {
+export const MemoryQueue = Queue.implement({ log: Logger }, ({ log }, ctx) => {
 	const events: AppEvent[] = []
 	const logger = log.child('queue')
 	ctx.defer(() => logger.info('flushed', { pending: events.length }))

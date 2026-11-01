@@ -104,7 +104,6 @@ function reader<T>(rows: () => Rows | undefined): ReadTable<T> {
 
 /** The in-memory storage behind a connection that, like a real driver's, opens asynchronously. */
 export const SqlDatabase = Database.implement(
-	'SqlDatabase',
 	{ config: Config, log: Logger },
 	async ({ config, log }, ctx) => {
 		const logger = log.child('db')

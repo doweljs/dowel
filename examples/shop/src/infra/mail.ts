@@ -14,14 +14,8 @@ export interface Mailer {
 
 export const Mailer = slot('Mailer')<Mailer>()
 
-export const SmtpMailer = Mailer.implement(
-	'SmtpMailer',
-	{ config: Config, log: Logger },
-	({ config, log }) => ({
-		send: async (mail) => {
-			log
-				.child('smtp')
-				.info('sending', { host: config.smtpHost, to: mail.to, subject: mail.subject })
-		},
-	}),
-)
+export const SmtpMailer = Mailer.implement({ config: Config, log: Logger }, ({ config, log }) => ({
+	send: async (mail) => {
+		log.child('smtp').info('sending', { host: config.smtpHost, to: mail.to, subject: mail.subject })
+	},
+}))

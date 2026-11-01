@@ -17,7 +17,7 @@ export interface Metrics {
 export const Logger = slot('Logger')<Logger>()
 export const Metrics = slot('Metrics')<Metrics>()
 
-export const ConsoleLogger = Logger.implement('ConsoleLogger', { config: Config }, ({ config }) => {
+export const ConsoleLogger = Logger.implement({ config: Config }, ({ config }) => {
 	const lines: string[] = []
 	const make = (prefix: string): Logger => ({
 		lines,
@@ -34,7 +34,7 @@ export const ConsoleLogger = Logger.implement('ConsoleLogger', { config: Config 
 	return make('')
 })
 
-export const MemoryMetrics = Metrics.implement('MemoryMetrics', () => {
+export const MemoryMetrics = Metrics.implement(() => {
 	const counters = new Map<string, number>()
 	return {
 		increment: (name: string, by = 1) => void counters.set(name, (counters.get(name) ?? 0) + by),

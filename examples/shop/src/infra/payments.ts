@@ -15,7 +15,6 @@ export interface PaymentGateway {
 export const PaymentGateway = slot('PaymentGateway')<PaymentGateway>()
 
 export const StripePaymentGateway = PaymentGateway.implement(
-	'StripePaymentGateway',
 	{ http: HttpClient, config: Config },
 	({ http, config }) => ({
 		charge: (customerId: string, amountCents: number) =>

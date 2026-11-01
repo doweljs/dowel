@@ -6,4 +6,4 @@ export interface Clock {
 
 export const Clock = slot('Clock')<Clock>()
 
-export const SystemClock = Clock.implement('SystemClock', () => ({ now: () => new Date() }))
+export const SystemClock = Clock.implement(() => ({ now: () => new Date() }))

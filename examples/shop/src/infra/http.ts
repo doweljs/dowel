@@ -13,7 +13,6 @@ export const HttpClient = slot('HttpClient')<HttpClient>()
 
 /** Wraps fetch with logging and metrics. */
 export const FetchHttpClient = HttpClient.implement(
-	'FetchHttpClient',
 	{ log: Logger, metrics: Metrics },
 	({ log, metrics }) => {
 		const logger = log.child('http')

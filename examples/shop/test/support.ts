@@ -14,7 +14,7 @@ export const testConfig: AppConfig = {
 }
 
 /** A clock that only moves when the test says so. */
-export const FakeClock = Clock.implement('FakeClock', () => {
+export const FakeClock = Clock.implementAs('FakeClock', () => {
 	let now = new Date('2026-01-01T12:00:00Z')
 	return {
 		now: () => now,
@@ -25,13 +25,13 @@ export const FakeClock = Clock.implement('FakeClock', () => {
 })
 
 /** Records mail instead of sending it. */
-export const FakeMailer = Mailer.implement('FakeMailer', () => {
+export const FakeMailer = Mailer.implementAs('FakeMailer', () => {
 	const sent: Mail[] = []
 	return { sent, send: async (mail) => void sent.push(mail) }
 })
 
 /** Approves every charge, and keeps a record of them. */
-export const FakePaymentGateway = PaymentGateway.implement('FakePaymentGateway', () => {
+export const FakePaymentGateway = PaymentGateway.implementAs('FakePaymentGateway', () => {
 	const charges: Charge[] = []
 	return {
 		charges,
@@ -44,7 +44,7 @@ export const FakePaymentGateway = PaymentGateway.implement('FakePaymentGateway',
 })
 
 /** The same storage as the demo's database, open at once instead of after a connection delay. */
-export const FakeDatabase = Database.implement('FakeDatabase', () => memoryDatabase())
+export const FakeDatabase = Database.implement(() => memoryDatabase())
 
 /**
  * The production graph with in-memory edges. The HTTP client needs no fake:

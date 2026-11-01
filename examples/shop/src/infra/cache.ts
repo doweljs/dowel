@@ -10,7 +10,7 @@ export interface Cache {
 export const Cache = slot('Cache')<Cache>()
 
 /** Entries expire `ttlMs` after they were set, by the injected clock: at that instant they are gone. */
-export const MemoryCache = Cache.implement('MemoryCache', { clock: Clock }, ({ clock }) => {
+export const MemoryCache = Cache.implement({ clock: Clock }, ({ clock }) => {
 	const entries = new Map<string, { value: unknown; expires: number }>()
 	return {
 		get: <T>(key: string) => {
