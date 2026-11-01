@@ -223,3 +223,30 @@ test('a value typed any, such as what JSON.parse() returns, binds as a value', a
 	const request = await app.open(PerRequest, Request.of(loose))
 	expectTypeOf(request.get(Handler)).toEqualTypeOf<string>()
 })
+
+test('a node typed any passed to the builder is reported once, by the method given it', () => {
+	const loose: any = undefined
+	const Items = slot('Items', { many: true })<number>()
+	type Issue<Method extends string> =
+		`${Method}() was given an argument typed any; check that it is imported and typed`
+
+	expectTypeOf(container().provide(loose).build).toEqualTypeOf<
+		CompositionIssues<Issue<'provide'>>
+	>()
+	// What else it is given is still provided, and nothing is misread as every name.
+	expectTypeOf(container().provide(Config, loose).build).toEqualTypeOf<
+		CompositionIssues<Issue<'provide'>>
+	>()
+	expectTypeOf(container().bind(loose, console).build).toEqualTypeOf<
+		CompositionIssues<Issue<'bind'>>
+	>()
+	expectTypeOf(container().contribute(loose, 1).build).toEqualTypeOf<
+		CompositionIssues<Issue<'contribute'>>
+	>()
+	expectTypeOf(container().provide(Config).override(loose, 1).build).toEqualTypeOf<
+		CompositionIssues<Issue<'override'>>
+	>()
+	expectTypeOf(
+		container().provide(Users).bind(Logger, console).contribute(Items, 1).build,
+	).toBeFunction()
+})

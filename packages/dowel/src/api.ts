@@ -42,6 +42,7 @@ import type {
 	ProvideAll,
 	Resolvable,
 	TargetOf,
+	UntypedIssue,
 } from './model/state.ts'
 import type { Simplify } from './model/util.ts'
 /**
@@ -131,13 +132,32 @@ export interface ContainerBuilder<S extends ContainerState> {
 	bind<T, TM extends SlotMeta, const I extends Impl<T, TM>>(
 		slot: Slot<T, TM>,
 		impl: I,
-	): ContainerBuilder<Provide<S, Binding<T, BindingMetaOf<TM, I>>>>
+	): ContainerBuilder<
+		UntypedIssue<
+			S,
+			SlotMeta extends TM ? true : false,
+			'bind',
+			Provide<S, Binding<T, BindingMetaOf<TM, I>>>
+		>
+	>
 
 	/** Contribute one item to a multi-binding slot. The same as `.bind()` for such slots, named for clarity. */
-	contribute<T, TM extends SlotMeta & { readonly many: true }, const I extends Impl<T, TM>>(
+	contribute<
+		T,
+		TM extends SlotMeta & { readonly many: true },
+		// A slot typed any, reported at build(), leaves no item type to check.
+		const I extends Impl<T, TM> | (SlotMeta & { readonly many: true } extends TM ? unknown : never),
+	>(
 		slot: Slot<T, TM>,
 		impl: I,
-	): ContainerBuilder<Provide<S, Binding<T, BindingMetaOf<TM, I>>>>
+	): ContainerBuilder<
+		UntypedIssue<
+			S,
+			SlotMeta & { readonly many: true } extends TM ? true : false,
+			'contribute',
+			Provide<S, Binding<T, BindingMetaOf<TM, I>>>
+		>
+	>
 
 	/**
 	 * Replace a node in the graph: the original is never created and nothing
@@ -151,7 +171,17 @@ export interface ContainerBuilder<S extends ContainerState> {
 			| NoInfer<T>
 			| ImplAt<T, M>
 			| Implementation<T, ImplementationMeta & { readonly scope: M['scope'] | M['above'] }>,
-	>(target: Overridable<T, M>, impl: I): ContainerBuilder<Override<S, TargetOf<M>, ImplOf<I>>>
+	>(
+		target: Overridable<T, M>,
+		impl: I,
+	): ContainerBuilder<
+		UntypedIssue<
+			S,
+			ServiceMeta | SlotMeta extends M ? true : false,
+			'override',
+			Override<S, TargetOf<M>, ImplOf<I>>
+		>
+	>
 
 	/**
 	 * Apply a reusable composition function. Write it generic in the state so

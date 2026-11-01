@@ -142,7 +142,7 @@ describe('nested scopes', () => {
 		)
 		// Declared in one, depending on the other.
 		expect(() =>
-			service('Mixed', untyped({ req: Req }), (d: unknown) => d, { scope: untyped(Impostor) }),
+			untyped(service)('Mixed', { req: Req }, (d: unknown) => d, { scope: Impostor }),
 		).toThrow(/Service 'Mixed' meets two distinct scopes named 'request'/)
 		// Opened in place of the one the container was built with, from the right parent.
 		const Twin = scope('request', SessionScope)
@@ -195,7 +195,7 @@ describe('nested scopes', () => {
 			/different scope branches/,
 		)
 		expect(() =>
-			service('Shallow', { req: Req }, (d) => d, { scope: untyped(SessionScope) }),
+			untyped(service)('Shallow', { req: Req }, (d: unknown) => d, { scope: SessionScope }),
 		).toThrow(/below it/)
 		expect(() => Sess.of(untyped(service('Deep', { req: Req }, () => ({ id: '' }))))).toThrow(
 			/which 'Sess' in 'session' cannot see/,

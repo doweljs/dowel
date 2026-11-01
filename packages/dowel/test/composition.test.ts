@@ -225,9 +225,9 @@ describe('declaration rules mirror the types', () => {
 		const Left = scope('left')
 		const Right = scope('right')
 		const OnLeft = slot('OnLeft', { scope: Left })<number>()
-		expect(() => service('Cross', { l: OnLeft }, (d) => d, { scope: untyped(Right) })).toThrow(
-			/different scope branch/,
-		)
+		expect(() =>
+			untyped(service)('Cross', { l: OnLeft }, (d: unknown) => d, { scope: Right }),
+		).toThrow(/different scope branch/)
 	})
 })
 

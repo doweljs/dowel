@@ -2,8 +2,17 @@ import { DowelError } from '../errors.ts'
 import type { DeclaredScope, ScopeName } from '../model/checks.ts'
 import type { AnyScope, Scope } from '../model/declarations.ts'
 import type { MetaOf } from '../model/infer.ts'
+import type { IsAny } from '../model/util.ts'
 import { scopeNode } from '../nodes/coerce.ts'
 import { allocateId, internal, ROOT, type ScopeNode } from '../nodes/node.ts'
+
+/**
+ * A parent typed `any` is read as `root`, so nothing below it reads as every
+ * scope. It can't be reported here: any check on the name would widen a
+ * template literal passed as it, and an `any` passes any check on itself.
+ */
+type ParentOf<P> =
+	IsAny<P> extends true ? { readonly name: 'root'; readonly above: never } : MetaOf<P>
 
 /**
  * Declare a scope: a lifetime shorter than the container's, such as one
@@ -22,8 +31,8 @@ export function scope<N extends string, P extends AnyScope>(
 	parent: P & DeclaredScope<P>,
 ): Scope<{
 	readonly name: N
-	readonly parent: MetaOf<P>['name']
-	readonly above: MetaOf<P>['name'] | MetaOf<P>['above']
+	readonly parent: ParentOf<P>['name']
+	readonly above: ParentOf<P>['name'] | ParentOf<P>['above']
 }>
 export function scope(name: string, parent?: AnyScope): unknown {
 	if (name === ROOT.name) {

@@ -620,10 +620,10 @@ describe('executions', () => {
 	test('a multi-binding cannot be an execution input', () => {
 		const Items = slot('Items', { scope: JobScope, many: true })<number>()
 		expect(() =>
-			execution('ManyInput', {
+			untyped(execution)('ManyInput', {
 				scope: JobScope,
 				entry: JobRunner,
-				inputs: { items: untyped(Items) },
+				inputs: { items: Items },
 			}),
 		).toThrow(/multi-binding 'Items'/)
 	})

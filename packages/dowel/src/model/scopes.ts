@@ -6,14 +6,17 @@
 
 import type { Deps, Optional, Placement, RootMeta } from './declarations.ts'
 import type { IncomparableScopes } from './diagnostics.ts'
+import type { IsAny } from './util.ts'
 
-/** The scope a dependency puts its dependent at: its own placement. */
+/** The scope a dependency puts its dependent at: its own placement. None for one typed `any`, which is reported. */
 export type ScopeOf<D> =
-	D extends Optional<infer G>
-		? ScopeOf<G>
-		: D extends { readonly '~meta'?: infer M extends Placement }
-			? { readonly name: M['scope']; readonly above: M['above'] }
-			: never
+	IsAny<D> extends true
+		? never
+		: D extends Optional<infer G>
+			? ScopeOf<G>
+			: D extends { readonly '~meta'?: infer M extends Placement }
+				? { readonly name: M['scope']; readonly above: M['above'] }
+				: never
 
 /** A scope as inference sees it: a name and its ancestors, without the parent a declared scope has. */
 export interface ScopeDescriptor {

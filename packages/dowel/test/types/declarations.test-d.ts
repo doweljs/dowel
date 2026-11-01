@@ -14,7 +14,7 @@ import {
 	service,
 	slot,
 } from '../../src/index.ts'
-import type { DeclaredScope, LiteralName } from '../../src/model/checks.ts'
+import type { DeclaredNames, DeclaredScope, LiteralName, Typed } from '../../src/model/checks.ts'
 import type { AnyScope, AnyService } from '../../src/model/declarations.ts'
 import type {
 	CompositionIssues,
@@ -25,6 +25,7 @@ import type {
 	MaybeMany,
 	MaybeMissingScope,
 	MissingBindings,
+	UntypedNodes,
 } from '../../src/model/diagnostics.ts'
 import type { MetaOf } from '../../src/model/infer.ts'
 import type { IsSingleLiteral } from '../../src/model/util.ts'
@@ -537,4 +538,37 @@ test('Slot.implement declares an implementation without a name, standing for its
 	const app = await container().provide(Users).bind(Logger, ConsoleLogger).build()
 	// @ts-expect-error: not resolvable
 	app.get(ConsoleLogger)
+})
+
+test('a node typed any, such as one a failed import leaves, is reported where it is passed, and nothing else misreads it', async () => {
+	const loose: any = undefined
+	const Work = scope('work')
+	const Input = slot('Input', { scope: Work })<string>()
+	const Uses = service('Uses', { input: Input }, ({ input }) => input)
+
+	// A dependency or input, by key.
+	expectTypeOf<DeclaredNames<{ x: any; log: typeof Input }>>().toEqualTypeOf<UntypedNodes<'x'>>()
+	// @ts-expect-error: 'x' is any
+	service('Dep', { x: loose, input: Input }, (d) => d)
+	// @ts-expect-error: 'input' is any
+	execution('ByInput', { scope: Work, entry: Uses, inputs: { input: loose } })
+
+	// An option, by its name.
+	expectTypeOf<Typed<any, 'scope'>>().toEqualTypeOf<UntypedNodes<'scope'>>()
+	expectTypeOf<Typed<typeof Work, 'scope'>>().toEqualTypeOf<unknown>()
+	// @ts-expect-error: the scope is any
+	service('Scoped', {}, () => 1, { scope: loose })
+	// @ts-expect-error: the scope is any
+	slot('InAny', { scope: loose })<number>()
+	// @ts-expect-error: the entry is any
+	execution('ByEntry', { scope: Work, entry: loose })
+
+	// What a declaration with an any dependency computes leaves it out, so build() reports no names or scopes it misread.
+	const Logger = slot('Logger')<{ info(m: string): void }>()
+	// @ts-expect-error: 'x' is any
+	const Impl = Logger.implement({ x: loose }, () => ({ info() {} }))
+	expectTypeOf(container().provide(Logger.of(Impl)).build).toBeFunction()
+
+	// A parent can't be reported, since any check on the name would widen a template literal passed as it; it reads as root.
+	expectTypeOf(scope('child', loose)).toEqualTypeOf(scope('child'))
 })
