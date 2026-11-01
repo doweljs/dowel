@@ -87,14 +87,12 @@ describe('function instances', () => {
 		expect(await run).toBe('started aborted')
 	})
 
-	test('refuses calls once its disposal has started', async () => {
-		const Fn = service('Fn', () => async () => 1)
+	test('a call after disposal still runs, with its signal aborted, as a retained object would', async () => {
+		const Fn = service('Fn', (ctx) => async () => ctx.signal.aborted)
 		const app = await container().provide(Fn).build()
 		const fn = app.get(Fn)
 		await app.dispose()
-		expect(() => fn()).toThrow(
-			expect.objectContaining({ code: 'DISPOSED' } satisfies Partial<DowelError>),
-		)
+		expect(await fn()).toBe(true)
 	})
 
 	test('passes results, this, properties and construction through unchanged', async () => {

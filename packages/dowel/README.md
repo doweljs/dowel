@@ -150,7 +150,7 @@ const Exec = service('Exec', { spawn: Spawn }, ({ spawn }, ctx) => async (comman
 }, { scope: Operation })
 ```
 
-Each call that returns a promise is tracked until it settles. Once the container's disposal starts, `ctx.signal` aborts for calls in flight and for calls that start after; the instance's disposal waits for its calls before its own disposers run and its dependencies are disposed, then refuses further calls with `DISPOSED`. Results, `this`, properties and `new` pass through unchanged.
+Each call that returns a promise is tracked until it settles. Once the container's disposal starts, `ctx.signal` aborts for calls in flight and for calls that start after; the instance's disposal waits for its calls before its own disposers run and its dependencies are disposed. A call made after that still runs, with `ctx.signal` aborted, as a method of a retained object would. Results, `this`, properties and `new` pass through unchanged.
 
 Pass `{ track: false }` when callers own what a call starts, such as a stream it returns. A function bound with `Slot.of()` is the binder's and is never tracked.
 

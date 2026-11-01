@@ -267,14 +267,9 @@ function tracked(instance: Function, record: InstanceRecord, store: Store): Func
 				record.controller ??= new AbortController()
 				if (!record.controller.signal.aborted) record.controller.abort(store.why!())
 			}
-			if (record.disposed) {
-				throw new DowelError(
-					'DISPOSED',
-					`Service '${record.plan.name}' has been disposed, so it can no longer be called.`,
-				)
-			}
 			const result: unknown = Reflect.apply(target, thisArg, args)
-			if (isPromiseLike(result)) {
+			// After disposal there's nothing left to wait for it; it runs with ctx.signal aborted, like any retained instance.
+			if (!record.disposed && isPromiseLike(result)) {
 				const call = Promise.resolve(result)
 				record.inFlight ??= new Set()
 				const calls = record.inFlight

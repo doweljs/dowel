@@ -38,8 +38,8 @@ export interface ServiceOptions<D extends Deps, Sc extends AnyScope> {
 	 * For a service whose instance is a function: whether its calls are tracked.
 	 * Default `true`: each call's promise is awaited, after `ctx.signal` aborts,
 	 * before the instance's own disposers run and its dependencies are
-	 * disposed, and calls are refused once its disposal starts. Pass `false`
-	 * when callers own what a call starts, such as a stream it returns.
+	 * disposed. Pass `false` when callers own what a call starts, such as a
+	 * stream it returns.
 	 */
 	readonly track?: boolean
 }
