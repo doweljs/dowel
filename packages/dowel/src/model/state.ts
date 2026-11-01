@@ -13,6 +13,7 @@ import type {
 	AnySlot,
 	Binding,
 	Execution,
+	Implementation,
 	ScopeMeta,
 	Service,
 	Slot,
@@ -131,22 +132,31 @@ type Root<S extends ContainerState, G extends Graph, Name extends string> = Stat
  * multi-binding `Slot<-Service`. Values contributed to a multi-binding
  * decide nothing, since any number of them may be added.
  */
-type BindingKey<M extends { readonly name: string; readonly graph: Graph }> =
-	M['graph'][M['name']] extends {
-		readonly kind: infer Kind
-		readonly deps: infer Deps extends string
-	}
+type BindingKey<M extends { readonly name: string; readonly graph: Graph }> = M extends {
+	readonly anonymous: true
+}
+	? // An unnamed contribution has no name to tell it apart; the runtime rejects one contributed twice.
+		M['graph'][M['name']] extends { readonly kind: 'many' }
+		? never
+		: M['name']
+	: M['graph'][M['name']] extends {
+				readonly kind: infer Kind
+				readonly deps: infer Deps extends string
+			}
 		? Kind extends 'many'
 			? `${M['name']}<-${Deps}`
 			: M['name']
 		: never
 
 /** The service a binding's slot resolves to, if it binds one. */
-type ImplName<M extends { readonly name: string; readonly graph: Graph }> =
-	M['graph'][M['name']] extends {
-		readonly kind: 'bound' | 'many'
-		readonly deps: infer Deps extends string
-	}
+type ImplName<M extends { readonly name: string; readonly graph: Graph }> = M extends {
+	readonly anonymous: true
+}
+	? never
+	: M['graph'][M['name']] extends {
+				readonly kind: 'bound' | 'many'
+				readonly deps: infer Deps extends string
+			}
 		? Deps
 		: never
 
@@ -204,12 +214,17 @@ export type Override<
 		? State<
 				MergeGraph<
 					S['graph'],
-					I extends Service<any, infer M>
+					I extends Implementation<any, infer M>
 						? MergeGraph<
 								M['graph'],
-								{ readonly [K in Name]: AliasEntry<EntryOf<S['graph'], Name>, M['name']> }
+								{ readonly [K in Name]: AliasEntry<EntryOf<S['graph'], Name>, M['deps']> }
 							>
-						: { readonly [K in Name]: ValueEntry<EntryOf<S['graph'], Name>> }
+						: I extends Service<any, infer M>
+							? MergeGraph<
+									M['graph'],
+									{ readonly [K in Name]: AliasEntry<EntryOf<S['graph'], Name>, M['name']> }
+								>
+							: { readonly [K in Name]: ValueEntry<EntryOf<S['graph'], Name>> }
 				>,
 				S['roots'],
 				S['bound'],

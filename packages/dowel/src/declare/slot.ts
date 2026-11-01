@@ -94,7 +94,11 @@ const slotMethods = {
 		slotNode(this)
 		return Object.freeze({ '~kind': 'optional', slot: this })
 	},
-	implement(this: unknown, name: string, ...rest: unknown[]): unknown {
+	implement(this: unknown, ...rest: unknown[]): unknown {
+		// Without a name of its own, it's shown as an implementation of the slot it was declared from.
+		return declareService(`${slotNode(this).name} (implementation)`, rest, this, true)
+	},
+	implementAs(this: unknown, name: string, ...rest: unknown[]): unknown {
 		return declareService(name, rest, this)
 	},
 }

@@ -24,6 +24,7 @@ import type {
 	IndefiniteScope,
 	MaybeMany,
 	MaybeMissingScope,
+	MissingBindings,
 } from '../../src/model/diagnostics.ts'
 import type { MetaOf } from '../../src/model/infer.ts'
 import type { IsSingleLiteral } from '../../src/model/util.ts'
@@ -431,9 +432,11 @@ test('optional slots', async () => {
 	scoped.open(PerRequest, Session.of({ userId: '1' }))
 })
 
-test('Slot.implement types the factory by the slot', async () => {
+test('Slot.implementAs types the factory by the slot', async () => {
 	// The parameters take their types from the slot, with no annotation.
-	const MemoryLogger = Logger.implement('MemoryLogger', () => ({ info: (message) => void message }))
+	const MemoryLogger = Logger.implementAs('MemoryLogger', () => ({
+		info: (message) => void message,
+	}))
 	expectTypeOf<Infer<typeof MemoryLogger>>().toEqualTypeOf<{
 		info: (message: string) => undefined
 	}>()
@@ -441,7 +444,7 @@ test('Slot.implement types the factory by the slot', async () => {
 
 	// The service keeps its own type: a fake can offer more than the slot asks for.
 	const Clock = slot('Clock')<{ now(): number }>()
-	const FakeClock = Clock.implement('FakeClock', () => {
+	const FakeClock = Clock.implementAs('FakeClock', () => {
 		let now = 0
 		return {
 			now: () => now,
@@ -454,29 +457,84 @@ test('Slot.implement types the factory by the slot', async () => {
 
 	// With dependencies, async, and with options after them.
 	const Lines = slot('Lines')<string[]>()
-	const AsyncLogger = Logger.implement('AsyncLogger', { lines: Lines }, async ({ lines }) => ({
+	const AsyncLogger = Logger.implementAs('AsyncLogger', { lines: Lines }, async ({ lines }) => ({
 		info: (message) => void lines.push(message),
 	}))
 	const lines: string[] = []
 	container().provide(Users).bind(Logger, AsyncLogger).bind(Lines, lines).build()
-	const Scoped = Logger.implement('Scoped', {}, () => ({ info() {} }), { scope: PerRequest })
+	const Scoped = Logger.implementAs('Scoped', {}, () => ({ info() {} }), { scope: PerRequest })
 	expectTypeOf<MetaOf<typeof Scoped>['scope']>().toEqualTypeOf<'request'>()
 
 	// A result that doesn't fit is an error at the declaration.
 	// @ts-expect-error: info must accept a string
-	Logger.implement('Wrong', () => ({ info: (count: number) => void count }))
+	Logger.implementAs('Wrong', () => ({ info: (count: number) => void count }))
 	// @ts-expect-error: info is missing
-	Logger.implement('Missing', () => ({ log() {} }))
+	Logger.implementAs('Missing', () => ({ log() {} }))
 	// @ts-expect-error: the async result must fit too
-	Logger.implement('WrongAsync', { lines: Lines }, async () => ({ log() {} }))
+	Logger.implementAs('WrongAsync', { lines: Lines }, async () => ({ log() {} }))
 
 	// Without dependencies there are no options: pass {} to give them.
 	// @ts-expect-error: options need the dependencies argument
-	Logger.implement('NoDepsOptions', () => ({ info() {} }), { scope: PerRequest })
+	Logger.implementAs('NoDepsOptions', () => ({ info() {} }), { scope: PerRequest })
 
 	// A multi-binding slot is implemented one item at a time.
 	const Middleware = slot('Middleware', { many: true })<(input: string) => string>()
-	const Upper = Middleware.implement('Upper', () => (input) => input.toUpperCase())
+	const Upper = Middleware.implementAs('Upper', () => (input) => input.toUpperCase())
 	expectTypeOf<Infer<typeof Upper>>().toEqualTypeOf<(input: string) => string>()
 	container().contribute(Middleware, Upper)
+})
+
+test('Slot.implement declares an implementation without a name, standing for its slot', async () => {
+	// Typed by the slot, with no name to write.
+	const ConsoleLogger = Logger.implement(() => ({ info: (message) => void message }))
+	container().provide(Users).bind(Logger, ConsoleLogger).build()
+
+	// Its dependencies become the slot's: a missing one names the slot as what needs it.
+	const Sink = slot('Sink')<{ write(line: string): void }>()
+	const SinkLogger = Logger.implement({ sink: Sink }, ({ sink }) => ({
+		info: (message) => sink.write(message),
+	}))
+	expectTypeOf(container().provide(Users).bind(Logger, SinkLogger).build).toEqualTypeOf<
+		MissingBindings<{ readonly Sink: 'Logger' }>
+	>()
+	container()
+		.provide(Users)
+		.bind(Logger, SinkLogger)
+		.bind(Sink, { write() {} })
+		.build()
+
+	// A result that doesn't fit is an error at the declaration.
+	// @ts-expect-error: info must accept a string
+	Logger.implement(() => ({ info: (count: number) => void count }))
+	// @ts-expect-error: options need the dependencies argument
+	Logger.implement(() => ({ info() {} }), { scope: PerRequest })
+	const Scoped = Logger.implement({}, () => ({ info() {} }), { scope: PerRequest })
+	// @ts-expect-error: a request-scoped implementation can't fill a root slot
+	container().bind(Logger, Scoped)
+
+	// It can fill any slot its type fits, and several at once.
+	const AuditLog = slot('AuditLog')<LoggerApi>()
+	const Audits = service('Audits', { audit: AuditLog }, ({ audit }) => audit)
+	container()
+		.provide(Users, Audits)
+		.bind(Logger, ConsoleLogger)
+		.bind(AuditLog, ConsoleLogger)
+		.build()
+
+	// Contributions, and overriding with one.
+	const Middleware = slot('Middleware', { many: true })<(input: string) => string>()
+	const Upper = Middleware.implement(() => (input) => input.toUpperCase())
+	const Trim = Middleware.implement(() => (input) => input.trim())
+	const Chain = service('Chain', { middleware: Middleware }, ({ middleware }) => middleware)
+	container().provide(Chain).contribute(Middleware, Upper).contribute(Middleware, Trim).build()
+	container().provide(Users).bind(Logger, console).override(Logger, ConsoleLogger).build()
+
+	// It has no identity of its own: it can't be depended on, provided or resolved.
+	// @ts-expect-error: not a dependency
+	service('DependsOnIt', { log: ConsoleLogger }, () => 1)
+	// @ts-expect-error: not a root
+	container().provide(ConsoleLogger)
+	const app = await container().provide(Users).bind(Logger, ConsoleLogger).build()
+	// @ts-expect-error: not resolvable
+	app.get(ConsoleLogger)
 })

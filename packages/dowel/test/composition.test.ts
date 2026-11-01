@@ -247,9 +247,9 @@ describe('slot methods', () => {
 	})
 })
 
-describe('Slot.implement', () => {
+describe('Slot.implementAs', () => {
 	test('declares a service that binds to the slot like any other', async () => {
-		const Impl = Logger.implement('Impl', () => memoryLogger())
+		const Impl = Logger.implementAs('Impl', () => memoryLogger())
 		const Uses = service('Uses', { log: Logger }, ({ log }) => log)
 		await using app = await container().provide(Uses).bind(Logger, Impl).build()
 		expect(app.get(Uses)).toBe(app.get(Impl))
@@ -257,18 +257,66 @@ describe('Slot.implement', () => {
 
 	test('checks and documents, but does not restrict where the service is bound', async () => {
 		const Other = slot('Other')<Infer<typeof Logger>>()
-		const Impl = Logger.implement('Impl', () => memoryLogger())
+		const Impl = Logger.implementAs('Impl', () => memoryLogger())
 		await using app = await container().provide(Other).bind(Other, Impl).build()
 		expect(app.get(Other)).toBe(app.get(Impl))
 	})
 
 	test('rejects being called on what is not a slot', () => {
 		const NotASlot = service('NotASlot', () => 1)
-		expect(() => untyped(Logger.implement).call(NotASlot, 'Impl', () => 1)).toThrow(
+		expect(() => untyped(Logger.implementAs).call(NotASlot, 'Impl', () => 1)).toThrow(
 			expect.objectContaining({
 				code: 'INVALID_NODE',
 				message: "What 'Impl' implements is not a slot.",
 			} satisfies Partial<DowelError>),
+		)
+	})
+})
+
+describe('Slot.implement', () => {
+	test('declares an unnamed service that binds and contributes like any other', async () => {
+		const Impl = Logger.implement(() => memoryLogger())
+		const Uses = service('Uses', { log: Logger }, ({ log }) => log)
+		const Middleware = slot('Middleware', { many: true })<(input: string) => string>()
+		const Upper = Middleware.implement(() => (input) => input.toUpperCase())
+		const Trim = Middleware.implement(() => (input) => input.trim())
+		const Chain = service('Chain', { middleware: Middleware }, ({ middleware }) => middleware)
+		await using app = await container()
+			.provide(Uses, Chain)
+			.bind(Logger, Impl)
+			.contribute(Middleware, Upper)
+			.contribute(Middleware, Trim)
+			.build()
+		expect(app.get(Uses)).toHaveProperty('info')
+		expect(app.get(Chain).reduce((acc, m) => m(acc), ' a ')).toBe('A')
+	})
+
+	test('is one instance behind every slot it fills', async () => {
+		const Other = slot('Other')<Infer<typeof Logger>>()
+		const Impl = Logger.implement(() => memoryLogger())
+		const Both = service('Both', { a: Logger, b: Other }, ({ a, b }) => a === b)
+		await using app = await container().provide(Both).bind(Logger, Impl).bind(Other, Impl).build()
+		expect(app.get(Both)).toBe(true)
+	})
+
+	test('is shown as an implementation of the slot it was declared from', async () => {
+		const Sink = slot('Sink')<{ write(line: string): void }>()
+		const Impl = Logger.implement({ sink: Sink }, ({ sink }) => ({
+			...memoryLogger(),
+			info: (message) => sink.write(message),
+		}))
+		const Uses = service('Uses', { log: Logger }, ({ log }) => log)
+		await using app = await container()
+			.provide(Uses)
+			.bind(Logger, Impl)
+			.bind(Sink, { write() {} })
+			.build()
+		expect(app.inspect().find((node) => node.name === 'Logger (implementation)')).toMatchObject({
+			kind: 'service',
+			implements: 'Logger',
+		})
+		await expect(untyped(container().provide(Uses).bind(Logger, Impl)).build()).rejects.toThrow(
+			"Slot 'Sink' is not bound. Needed by Uses → Logger → Logger (implementation) → Sink.",
 		)
 	})
 })

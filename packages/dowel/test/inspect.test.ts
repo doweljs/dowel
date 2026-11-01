@@ -52,7 +52,7 @@ describe('inspect', () => {
 	})
 
 	test('reports the slot a service declared with implements fills', async () => {
-		const Impl = Logger.implement('Impl', () => memoryLogger())
+		const Impl = Logger.implementAs('Impl', () => memoryLogger())
 		const Plain = service('Plain', () => 1)
 		const app = await container().provide(Logger, Plain).bind(Logger, Impl).build()
 		const byName = new Map(app.inspect().map((node) => [node.name, node]))
