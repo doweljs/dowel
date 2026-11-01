@@ -20,8 +20,8 @@ export const ProductRepository = service('ProductRepository', { db: Database }, 
 }))
 
 /** Prices depend on the time of day when dynamic pricing is on, so it needs a clock. */
-export const PricingService = service(
-	'PricingService',
+export const Pricing = service(
+	'Pricing',
 	{ flags: FeatureFlags, clock: Clock },
 	({ flags, clock }) => ({
 		price: (product: Product): number => {
@@ -32,9 +32,9 @@ export const PricingService = service(
 	}),
 )
 
-export const CatalogService = service(
-	'CatalogService',
-	{ products: ProductRepository, pricing: PricingService },
+export const Catalog = service(
+	'Catalog',
+	{ products: ProductRepository, pricing: Pricing },
 	({ products, pricing }) => ({
 		list: async () =>
 			(await products.all()).map((product) => ({ ...product, priceCents: pricing.price(product) })),

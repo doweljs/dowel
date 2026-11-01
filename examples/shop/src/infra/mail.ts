@@ -1,4 +1,4 @@
-import { service, slot } from '@doweljs/core'
+import { slot } from '@doweljs/core'
 import { Config } from '../config'
 import { Logger } from '../logging'
 
@@ -14,11 +14,11 @@ export interface Mailer {
 
 export const Mailer = slot('Mailer')<Mailer>()
 
-export const SmtpMailer = service(
+export const SmtpMailer = Mailer.implement(
 	'SmtpMailer',
 	{ config: Config, log: Logger },
 	({ config, log }) => ({
-		send: async (mail: Mail) => {
+		send: async (mail) => {
 			log
 				.child('smtp')
 				.info('sending', { host: config.smtpHost, to: mail.to, subject: mail.subject })

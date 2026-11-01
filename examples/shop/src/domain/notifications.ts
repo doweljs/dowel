@@ -4,12 +4,12 @@ import type { OrderPaid } from '../events'
 import { Mailer } from '../infra/mail'
 import { Queue } from '../infra/queue'
 import { Logger } from '../logging'
-import { UserService } from './users'
+import { Accounts } from './users'
 
 /** Drains the queue, turning events into emails. */
-export const NotificationService = service(
-	'NotificationService',
-	{ queue: Queue, mailer: Mailer, users: UserService, flags: FeatureFlags, log: Logger },
+export const Notifier = service(
+	'Notifier',
+	{ queue: Queue, mailer: Mailer, users: Accounts, flags: FeatureFlags, log: Logger },
 	({ queue, mailer, users, flags, log }) => {
 		const sendReceipt = async ({ orderId, userId }: OrderPaid): Promise<void> => {
 			if (!flags.emailReceipts) return

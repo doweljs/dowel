@@ -1,8 +1,3 @@
-/**
- * Fakes for the edges of the system, and the production composition with
- * them in place.
- */
-import { service } from '@doweljs/core'
 import type { AppConfig } from '../src/config'
 import { appBuilder } from '../src/container'
 import { Clock } from '../src/infra/clock'
@@ -19,7 +14,7 @@ export const testConfig: AppConfig = {
 }
 
 /** A clock that only moves when the test says so. */
-export const FakeClock = service('FakeClock', () => {
+export const FakeClock = Clock.implement('FakeClock', () => {
 	let now = new Date('2026-01-01T12:00:00Z')
 	return {
 		now: () => now,
@@ -30,17 +25,17 @@ export const FakeClock = service('FakeClock', () => {
 })
 
 /** Records mail instead of sending it. */
-export const FakeMailer = service('FakeMailer', () => {
+export const FakeMailer = Mailer.implement('FakeMailer', () => {
 	const sent: Mail[] = []
-	return { sent, send: async (mail: Mail) => void sent.push(mail) }
+	return { sent, send: async (mail) => void sent.push(mail) }
 })
 
 /** Approves every charge, and keeps a record of them. */
-export const FakePaymentGateway = service('FakePaymentGateway', () => {
+export const FakePaymentGateway = PaymentGateway.implement('FakePaymentGateway', () => {
 	const charges: Charge[] = []
 	return {
 		charges,
-		charge: async (_customerId: string, amountCents: number): Promise<Charge> => {
+		charge: async (_customerId, amountCents) => {
 			const charge: Charge = { id: `ch_fake_${charges.length}`, amountCents, status: 'succeeded' }
 			charges.push(charge)
 			return charge
@@ -49,7 +44,7 @@ export const FakePaymentGateway = service('FakePaymentGateway', () => {
 })
 
 /** The same storage as the demo's database, open at once instead of after a connection delay. */
-export const FakeDatabase = service('FakeDatabase', () => memoryDatabase())
+export const FakeDatabase = Database.implement('FakeDatabase', () => memoryDatabase())
 
 /**
  * The production graph with in-memory edges. The HTTP client needs no fake:

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test'
 import type { Infer } from '@doweljs/core'
 import { type Product, ProductRepository } from '../src/domain/catalog'
-import { normalizeItems, OrderService, priceItems } from '../src/domain/orders'
+import { normalizeItems, Orders, priceItems } from '../src/domain/orders'
 import { PaymentGateway } from '../src/infra/payments'
 import { FakePaymentGateway, startTestApp, testApp } from './support'
 
@@ -51,7 +51,7 @@ describe('placing orders', () => {
 	test('an invalid order charges nothing and changes nothing', async () => {
 		await using app = await startTestApp()
 		await app.get(ProductRepository).seed([thing])
-		const orders = app.get(OrderService)
+		const orders = app.get(Orders)
 		await expect(orders.place('u', [{ productId: 'p', quantity: -2 }])).rejects.toThrow(
 			'positive whole number',
 		)
@@ -70,7 +70,7 @@ describe('placing orders', () => {
 	test('concurrent checkouts cannot sell more than is in stock', async () => {
 		await using app = await startTestApp()
 		await app.get(ProductRepository).seed([thing])
-		const orders = app.get(OrderService)
+		const orders = app.get(Orders)
 		const results = await Promise.allSettled(
 			[2, 2].map((quantity) => orders.place('u', [{ productId: 'p', quantity }])),
 		)
@@ -87,7 +87,7 @@ describe('placing orders', () => {
 		}
 		await using app = await testApp().override(PaymentGateway, unreachable).build()
 		await app.get(ProductRepository).seed([thing])
-		const orders = app.get(OrderService)
+		const orders = app.get(Orders)
 		await expect(orders.place('u', [{ productId: 'p', quantity: 1 }])).rejects.toThrow(
 			'unreachable',
 		)

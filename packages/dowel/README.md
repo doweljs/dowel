@@ -13,25 +13,29 @@ Type-complete dependency injection for TypeScript.
 import { container, service, slot } from '@doweljs/core'
 
 const Logger = slot('Logger')<{ info(message: string): void }>()
+const Config = slot('Config')<{ dbUrl: string }>()
 
-const Config = service('Config', () => ({ dbUrl: process.env.DATABASE_URL! }))
-const Db = service('Db', { config: Config }, async ({ config }, ctx) =>
+const Database = service('Database', { config: Config }, async ({ config }, ctx) =>
 	ctx.adopt(await connect(config.dbUrl), (client) => client.close()),
 )
-const Users = service('Users', { db: Db, log: Logger }, ({ db, log }) => ({
+const UserDirectory = service('UserDirectory', { db: Database, log: Logger }, ({ db, log }) => ({
 	list: () => {
 		log.info('listing users')
 		return db.query('select * from users')
 	},
 }))
 
-const app = await container().provide(Users).bind(Logger, { info: console.log }).build()
+const app = await container()
+	.provide(UserDirectory)
+	.bind(Config, { dbUrl: process.env.DATABASE_URL! })
+	.bind(Logger, console)
+	.build()
 
-app.get(Users).list()
+app.get(UserDirectory).list()
 await app.dispose()
 ```
 
-Remove `.bind(Logger, …)` and `build()` stops being callable: its type becomes `MissingBindings<{ Logger: "Users" }>`.
+Remove `.bind(Logger, …)` and `build()` stops being callable: its type becomes `MissingBindings<{ Logger: "UserDirectory" }>`.
 
 ## Slots
 
@@ -43,7 +47,7 @@ const Logger = slot('Logger')<LoggerApi>()
 
 // Supplied each time a container for PerRequest opens.
 const PerRequest = scope('request')
-const Request = slot('Request', { scope: PerRequest })<IncomingRequest>()
+const CurrentRequest = slot('CurrentRequest', { scope: PerRequest })<IncomingRequest>()
 
 // Collects contributions into a readonly array.
 const Middleware = slot('Middleware', { many: true })<Middleware>()
@@ -53,7 +57,7 @@ Names are unique within a container: the type system identifies nodes by name.
 
 A slot also carries what can be done with it:
 
-- `Request.of(req)` binds it to a value or a service for `open()`, or contributes one item to a multi-binding.
+- `CurrentRequest.of(req)` binds it to a value or a service for `open()`, or contributes one item to a multi-binding.
 - `Metrics.optional()` depends on it without requiring it bound.
 - `Logger.implement(name, deps?, factory)` declares a service that fills it: see [Implementing a slot](#implementing-a-slot).
 
@@ -62,11 +66,11 @@ A slot also carries what can be done with it:
 A service lists its dependencies as values. Its requirements, its scope and whether it is async follow from them.
 
 ```ts
-const Users = service(
-	'Users',
-	{ db: Db, log: Logger, metrics: Metrics.optional() },
+const UserDirectory = service(
+	'UserDirectory',
+	{ db: Database, log: Logger, metrics: Metrics.optional() },
 	({ db, log, metrics }, ctx) => {
-		ctx.defer(() => log.info('Users disposed'))
+		ctx.defer(() => log.info('UserDirectory disposed'))
 		return {
 			list() {
 				metrics?.increment('users.list')
@@ -77,22 +81,22 @@ const Users = service(
 )
 ```
 
-Hover `Users` to see the graph the compiler reasons about:
+Hover `UserDirectory` to see the graph the compiler reasons about:
 
 ```ts
-Service<UsersApi, {
-	name: 'Users'; scope: 'root'; above: never
+Service<UserDirectoryApi, {
+	name: 'UserDirectory'; scope: 'root'; above: never
 	graph: {
-		Users:   { kind: 'service'; scope: 'root'; deps: 'Db' | 'Logger' | 'Metrics'; optional: 'Metrics'; … }
-		Db:      { kind: 'service'; scope: 'root'; deps: 'Config'; … }
-		Config:  { kind: 'service'; scope: 'root'; deps: never; … }
-		Logger:  { kind: 'slot';     scope: 'root'; … }
-		Metrics: { kind: 'slot';     scope: 'root'; … }
+		UserDirectory: { kind: 'service'; scope: 'root'; deps: 'Database' | 'Logger' | 'Metrics'; optional: 'Metrics'; … }
+		Database:      { kind: 'service'; scope: 'root'; deps: 'Config'; … }
+		Config:        { kind: 'slot';    scope: 'root'; … }
+		Logger:        { kind: 'slot';    scope: 'root'; … }
+		Metrics:       { kind: 'slot';    scope: 'root'; … }
 	}
 }>
 ```
 
-A service has one instance per container of its scope. The only option, `scope`, places a service deeper than its dependencies imply, such as one unit of work per request although it only needs the database; shallower is a compile error.
+A service has one instance per container of its scope. The `scope` option places a service deeper than its dependencies imply, such as one unit of work per request although it only needs the database; shallower is a compile error.
 
 ### Implementing a slot
 
@@ -124,12 +128,12 @@ Only what a factory adopts is disposed; adopting what another service owns is an
 
 ```ts
 const app = await container()
-	.provide(Users, Mailer) // services; their dependencies are discovered
+	.provide(UserDirectory, Mailer) // services; their dependencies are discovered
 	.bind(Logger, PinoLogger) // a slot to a service…
 	.bind(Config, { port: 3000 }) // …or to a value
-	.contribute(Middleware, Cors) // one item of a multi-binding
+	.contribute(Middleware, CorsMiddleware) // one item of a multi-binding
 	.with(infrastructure) // apply a composition function
-	.override(Db, fakeDb) // replace a node in the graph (tests)
+	.override(Database, fakeDatabase) // replace a node in the graph (tests)
 	.build()
 ```
 
@@ -141,7 +145,7 @@ Builders are persistent: every call returns a new builder. Write reusable compos
 
 ```ts
 const infrastructure = <S extends ContainerState>(b: ContainerBuilder<S>) =>
-	b.bind(Logger, ConsoleLogger).bind(Database, SqlDatabase)
+	b.bind(Logger, ConsoleLogger).bind(Mailer, SmtpMailer)
 
 container().with(infrastructure).bind(Config, config).provide(Checkout).build()
 ```
@@ -149,22 +153,22 @@ container().with(infrastructure).bind(Config, config).provide(Checkout).build()
 `get()` is typed against what the container creates:
 
 ```ts
-app.get(Users) // UsersApi
+app.get(UserDirectory) // UserDirectoryApi
 app.get(Mailer) // error: NotProvided<"Mailer">
-app.get(Current) // error: NotVisible<"Current", "request">
-app.get(Smtp) // error: CreatedOnDemand<"Smtp">, reached only through an execution
+app.get(CurrentUser) // error: NotVisible<"CurrentUser", "request">
+app.get(SmtpConnection) // error: CreatedOnDemand<"SmtpConnection">, reached only through an execution
 ```
 
-Overrides are exact: override `Db` with a fake, and nothing that only `Db` needed is required any more.
+Overrides are exact: override `Database` with a fake, and nothing that only `Database` needed is required any more.
 
 ## Scopes
 
 A scope is a lifetime shorter than the app's, such as one request. `open()` creates a child container for it, with the scope's slots bound to values; a missing value is a compile error naming the slot and what needs it.
 
 ```ts
-await using request = await app.open(PerRequest, Request.of(req))
+await using request = await app.open(PerRequest, CurrentRequest.of(req))
 request.get(CurrentUser) // created once per opened container
-request.get(Users) // root-scope services are shared
+request.get(UserDirectory) // root-scope services are shared
 ```
 
 **Always dispose what `open()` returns**, with `await using` or in a `finally`. A container keeps what it opened until that is disposed, so a dropped one lives on until its parent is disposed.
@@ -174,20 +178,20 @@ What the roots reach in a scope is created when its container opens, which is wh
 Scopes nest:
 
 ```ts
-export const Session = scope('session')
-export const Request = scope('request', Session)
+export const PerSession = scope('session')
+export const PerRequest = scope('request', PerSession)
 
-const Sess = slot('Sess', { scope: Session })<SessionData>()
-const Req = slot('Req', { scope: Request })<IncomingRequest>()
+const CurrentSession = slot('CurrentSession', { scope: PerSession })<SessionData>()
+const CurrentRequest = slot('CurrentRequest', { scope: PerRequest })<IncomingRequest>()
 
-const Cart = service('Cart', { sess: Sess }, …)                  // lives in 'session'
-const Handler = service('Handler', { req: Req, cart: Cart }, …)  // lives in 'request'
+const Cart = service('Cart', { session: CurrentSession }, …)                               // lives in 'session'
+const RequestHandler = service('RequestHandler', { request: CurrentRequest, cart: Cart }, …) // lives in 'request'
 
-await using session = await app.open(Session, Sess.of(data))
-await using request = await session.open(Request, Req.of(req))
-request.get(Handler)   // sees request, session and root
-session.get(Handler)   // error: NotVisible<"Handler", "request">
-app.open(Request, …)   // error: NotChildScope<"request", "root">
+await using session = await app.open(PerSession, CurrentSession.of(data))
+await using request = await session.open(PerRequest, CurrentRequest.of(req))
+request.get(RequestHandler)   // sees request, session and root
+session.get(RequestHandler)   // error: NotVisible<"RequestHandler", "request">
+app.open(PerRequest, …)       // error: NotChildScope<"request", "root">
 ```
 
 A service lives in the deepest scope among its dependencies; dependencies on different branches are rejected where it is declared. Declare each scope once and import it where it is used: two scopes sharing a name are rejected wherever they meet.
@@ -197,26 +201,30 @@ A service lives in the deepest scope among its dependencies; dependencies on dif
 Work a service starts and finishes on its own, such as a job or a message handler, is an execution: a scope, an entry in that scope or above, and the inputs each run supplies. Dependents receive a runner.
 
 ```ts
-const Job = scope('job')
-const JobInput = slot('JobInput', { scope: Job })<{ id: string }>()
-const JobRunner = service('JobRunner', { input: JobInput, db: Db }, ({ input, db }) => ({
-	run: () => db.process(input.id),
+const PerJob = scope('job')
+const CurrentJob = slot('CurrentJob', { scope: PerJob })<{ id: string }>()
+const JobProcessor = service('JobProcessor', { job: CurrentJob, db: Database }, ({ job, db }) => ({
+	run: () => db.process(job.id),
 }))
 
-const RunJob = execution('RunJob', { scope: Job, entry: JobRunner, inputs: { job: JobInput } })
+const ProcessJob = execution('ProcessJob', {
+	scope: PerJob,
+	entry: JobProcessor,
+	inputs: { job: CurrentJob },
+})
 
-const Scheduler = service('Scheduler', { runJob: RunJob }, ({ runJob }) => ({
-	schedule: (id: string) => runJob({ job: { id } }, (runner) => runner.run()),
+const JobScheduler = service('JobScheduler', { processJob: ProcessJob }, ({ processJob }) => ({
+	schedule: (id: string) => processJob({ job: { id } }, (processor) => processor.run()),
 }))
 ```
 
-Each run opens a container for the scope with the given inputs, hands the entry to the body, and disposes the container once the body settles. An execution without inputs takes only the body. `build()` isn't callable while the inputs don't cover what the entry needs: `IncompleteExecutions<{ RunJob: "Other" }>`.
+Each run opens a container for the scope with the given inputs, hands the entry to the body, and disposes the container once the body settles. An execution without inputs takes only the body. `build()` isn't callable while the inputs don't cover what the entry needs: `IncompleteExecutions<{ ProcessJob: "Other" }>`.
 
 What the entry reaches above the run's scope, and nothing provided reaches, is created by the first run that needs it, shared with later runs and disposed with its scope; a failed creation is retried on the next demand. `get()` refuses such a service with `CREATED_ON_DEMAND`; provide it to create it with the container.
 
-A run belongs to the container its runner was resolved from. Disposing that container aborts the `signal` the body receives as its second argument, waits for the body to settle, then disposes the run. Every run beneath is aborted before any is waited for, so runs that wait on each other don't deadlock. A run whose owner is disposed before its body starts rejects with `DISPOSED`. A run whose body succeeds but whose disposal fails rejects with a `DisposalError` (`DISPOSAL_FAILED`): the body's result is on `value` and the disposal failure on `cause`, so a caller that must not repeat committed work can log it and carry on.
+A run belongs to the container its runner was resolved from. Disposing that container aborts the `signal` of the context the body receives as its second argument, `(entry, { signal })`, waits for the body to settle, then disposes the run. Every run beneath is aborted before any is waited for, so runs that wait on each other don't deadlock. A run whose owner is disposed before its body starts rejects with `DISPOSED`. A run whose body succeeds but whose disposal fails rejects with a `DisposalError` (`DISPOSAL_FAILED`): the body's result is on `value` and the disposal failure on `cause`, so a caller that must not repeat committed work can log it and carry on.
 
-A caller cancels a run with `{ signal }` after the body, as in `runJob({ job }, body, { signal: AbortSignal.timeout(5_000) })`. Aborted before the body starts, the run disposes what it created and rejects with the signal's reason; aborted while the body runs, the body's `signal` aborts with that reason and the run settles as the body does. A run started beneath a cancelled one never runs its body.
+A caller cancels a run with `{ signal }` after the body, as in `processJob({ job }, body, { signal: AbortSignal.timeout(5_000) })`. Aborted before the body starts, the run disposes what it created and rejects with the signal's reason; aborted while the body runs, the body's `signal` aborts with that reason and the run settles as the body does. A run started beneath a cancelled one never runs its body.
 
 ## Multi-bindings
 
@@ -226,7 +234,11 @@ const Server = service('Server', { middleware: Middleware }, ({ middleware }) =>
 	createServer(middleware),
 )
 
-container().provide(Server).contribute(Middleware, Auth).contribute(Middleware, Cors).build()
+container()
+	.provide(Server)
+	.contribute(Middleware, AuthMiddleware)
+	.contribute(Middleware, CorsMiddleware)
+	.build()
 ```
 
 Contributions resolve to a readonly array, in order; with none, to `[]`. `override()` on a multi-binding replaces the whole set.
@@ -240,7 +252,7 @@ Contributions resolve to a readonly array, in order; with none, to `[]`. `overri
 Runtime errors are `DowelError`s with a stable `code`, such as `UNBOUND_SLOT`, `CAPTIVE_DEPENDENCY`, `CYCLE` or `DISPOSED`, and name the dependency path:
 
 ```text
-Slot 'Logger' is not bound. Needed by Api → Users → Logger.
+Slot 'Logger' is not bound. Needed by Api → UserDirectory → Logger.
 ```
 
 Well-typed code rarely reaches them; they are the safety net for `any` and dynamic composition.

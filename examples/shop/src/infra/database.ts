@@ -1,4 +1,4 @@
-import { service, slot } from '@doweljs/core'
+import { slot } from '@doweljs/core'
 import { Config } from '../config'
 import { Logger } from '../logging'
 import type { Tables } from '../schema'
@@ -103,7 +103,7 @@ function reader<T>(rows: () => Rows | undefined): ReadTable<T> {
 }
 
 /** The in-memory storage behind a connection that, like a real driver's, opens asynchronously. */
-export const SqlDatabase = service(
+export const SqlDatabase = Database.implement(
 	'SqlDatabase',
 	{ config: Config, log: Logger },
 	async ({ config, log }, ctx) => {

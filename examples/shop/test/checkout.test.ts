@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test'
 import type { Infer } from '@doweljs/core'
 import { ProductRepository } from '../src/domain/catalog'
-import { NotificationService } from '../src/domain/notifications'
+import { Notifier } from '../src/domain/notifications'
 import type { OrderItem } from '../src/domain/orders'
-import { UserService } from '../src/domain/users'
+import { Accounts } from '../src/domain/users'
 import { type Charge, PaymentGateway } from '../src/infra/payments'
 import { Metrics } from '../src/logging'
-import { Checkout, PerRequest, Request, Session } from '../src/request'
+import { Checkout, CurrentRequest, CurrentSession, PerRequest } from '../src/request'
 import {
 	FakeClock,
 	FakeMailer,
@@ -17,7 +17,7 @@ import {
 } from './support'
 
 /** A product in stock and a registered customer. */
-async function seed(products: Infer<typeof ProductRepository>, users: Infer<typeof UserService>) {
+async function seed(products: Infer<typeof ProductRepository>, users: Infer<typeof Accounts>) {
 	await products.seed([{ id: 'p', name: 'Thing', priceCents: 1000, stock: 5 }])
 	return users.register('a@example.com', 'A')
 }
@@ -25,8 +25,8 @@ async function seed(products: Infer<typeof ProductRepository>, users: Infer<type
 async function checkout(app: TestApp, userId: string | null, items: readonly OrderItem[]) {
 	await using request = await app.open(
 		PerRequest,
-		Request.of({ id: 'req', method: 'POST', path: '/checkout', headers: {} }),
-		Session.of({ userId }),
+		CurrentRequest.of({ id: 'req', method: 'POST', path: '/checkout', headers: {} }),
+		CurrentSession.of({ userId }),
 	)
 	return request.get(Checkout).placeOrder(items)
 }
@@ -34,13 +34,13 @@ async function checkout(app: TestApp, userId: string | null, items: readonly Ord
 describe('checkout', () => {
 	test('places an order, charges the card and emails a receipt', async () => {
 		await using app = await startTestApp()
-		const user = await seed(app.get(ProductRepository), app.get(UserService))
+		const user = await seed(app.get(ProductRepository), app.get(Accounts))
 
 		const order = await checkout(app, user.id, [{ productId: 'p', quantity: 2 }])
 		expect(order).toMatchObject({ status: 'paid', totalCents: 2000, chargeId: 'ch_fake_0' })
 		expect((await app.get(ProductRepository).byId('p'))?.stock).toBe(3)
 
-		expect(await app.get(NotificationService).deliverPending()).toBe(1)
+		expect(await app.get(Notifier).deliverPending()).toBe(1)
 		expect(app.get(FakeMailer).sent).toEqual([
 			{ to: 'a@example.com', subject: `Receipt for ${order.id}`, body: 'Thanks, A!' },
 		])
@@ -57,22 +57,22 @@ describe('checkout', () => {
 		}
 		// Builders are persistent: one test swaps the gateway without touching the others.
 		await using app = await testApp().override(PaymentGateway, declining).build()
-		const user = await seed(app.get(ProductRepository), app.get(UserService))
+		const user = await seed(app.get(ProductRepository), app.get(Accounts))
 
 		await using request = await app.open(
 			PerRequest,
-			Request.of({ id: 'req', method: 'POST', path: '/checkout', headers: {} }),
-			Session.of({ userId: user.id }),
+			CurrentRequest.of({ id: 'req', method: 'POST', path: '/checkout', headers: {} }),
+			CurrentSession.of({ userId: user.id }),
 		)
 		const order = await request.get(Checkout).placeOrder([{ productId: 'p', quantity: 1 }])
 		expect(order.status).toBe('declined')
 		expect((await app.get(ProductRepository).byId('p'))?.stock).toBe(5)
-		expect(await app.get(NotificationService).deliverPending()).toBe(0)
+		expect(await app.get(Notifier).deliverPending()).toBe(0)
 	})
 
 	test('night-time dynamic pricing is driven by the fake clock', async () => {
 		await using app = await startTestApp()
-		const user = await seed(app.get(ProductRepository), app.get(UserService))
+		const user = await seed(app.get(ProductRepository), app.get(Accounts))
 		app.get(FakeClock).set(new Date('2026-01-01T23:30:00Z'))
 
 		const order = await checkout(app, user.id, [{ productId: 'p', quantity: 1 }])

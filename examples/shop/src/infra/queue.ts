@@ -1,4 +1,4 @@
-import { service, slot } from '@doweljs/core'
+import { slot } from '@doweljs/core'
 import type { AppEvent } from '../events'
 import { Logger } from '../logging'
 
@@ -10,7 +10,7 @@ export interface Queue {
 
 export const Queue = slot('Queue')<Queue>()
 
-export const MemoryQueue = service('MemoryQueue', { log: Logger }, ({ log }, ctx) => {
+export const MemoryQueue = Queue.implement('MemoryQueue', { log: Logger }, ({ log }, ctx) => {
 	const events: AppEvent[] = []
 	const logger = log.child('queue')
 	ctx.defer(() => logger.info('flushed', { pending: events.length }))
@@ -27,5 +27,5 @@ export const MemoryQueue = service('MemoryQueue', { log: Logger }, ({ log }, ctx
 			}
 			return handled
 		},
-	} satisfies Queue
+	}
 })

@@ -4,7 +4,7 @@ import { IdGenerator } from '../infra/ids'
 import { type Charge, PaymentGateway } from '../infra/payments'
 import { Queue } from '../infra/queue'
 import { Logger, Metrics } from '../logging'
-import { PricingService, type Product } from './catalog'
+import { Pricing, type Product } from './catalog'
 
 /** What a customer asks for. */
 export interface OrderItem {
@@ -64,11 +64,11 @@ export const OrderRepository = service('OrderRepository', { db: Database }, ({ d
 	forUser: (userId: string) => db.table('orders').find({ userId }),
 }))
 
-export const OrderService = service(
-	'OrderService',
+export const Orders = service(
+	'Orders',
 	{
 		orders: OrderRepository,
-		pricing: PricingService,
+		pricing: Pricing,
 		payments: PaymentGateway,
 		queue: Queue,
 		ids: IdGenerator,

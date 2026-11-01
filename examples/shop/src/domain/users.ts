@@ -25,8 +25,8 @@ export const UserRepository = service(
 	}),
 )
 
-export const UserService = service(
-	'UserService',
+export const Accounts = service(
+	'Accounts',
 	{ users: UserRepository, db: Database, ids: IdGenerator, log: Logger, metrics: Metrics },
 	({ users, db, ids, log, metrics }) => {
 		const logger = log.child('users')

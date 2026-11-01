@@ -1,13 +1,13 @@
 import { type ContainerBuilder, type ContainerState, container } from '@doweljs/core'
 import { type AppConfig, Config } from './config'
-import { CatalogService } from './domain/catalog'
-import { NotificationService } from './domain/notifications'
+import { Catalog } from './domain/catalog'
+import { Notifier } from './domain/notifications'
 import { Cache, MemoryCache } from './infra/cache'
 import { Clock, SystemClock } from './infra/clock'
 import { Database, SqlDatabase } from './infra/database'
-import { FetchClient, HttpClient } from './infra/http'
+import { FetchHttpClient, HttpClient } from './infra/http'
 import { Mailer, SmtpMailer } from './infra/mail'
-import { PaymentGateway, StripeGateway } from './infra/payments'
+import { PaymentGateway, StripePaymentGateway } from './infra/payments'
 import { MemoryQueue, Queue } from './infra/queue'
 import { ConsoleLogger, Logger, MemoryMetrics, Metrics } from './logging'
 import { Checkout } from './request'
@@ -27,7 +27,7 @@ export const infrastructure = <S extends ContainerState>(b: ContainerBuilder<S>)
 
 /** Everything the application exposes: the catalog, request handling and background delivery. */
 export const application = <S extends ContainerState>(b: ContainerBuilder<S>) =>
-	b.provide(CatalogService, Checkout, NotificationService)
+	b.provide(Catalog, Checkout, Notifier)
 
 /**
  * The production composition, unbuilt. Builders are persistent, so tests and
@@ -37,8 +37,8 @@ export function appBuilder(config: AppConfig) {
 	return container()
 		.with(infrastructure)
 		.bind(Config, config)
-		.bind(HttpClient, FetchClient)
-		.bind(PaymentGateway, StripeGateway)
+		.bind(HttpClient, FetchHttpClient)
+		.bind(PaymentGateway, StripePaymentGateway)
 		.bind(Mailer, SmtpMailer)
 		.with(application)
 }

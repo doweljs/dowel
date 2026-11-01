@@ -1,4 +1,4 @@
-import { service, slot } from '@doweljs/core'
+import { slot } from '@doweljs/core'
 import { Config } from '../config'
 import { HttpClient } from './http'
 
@@ -14,8 +14,8 @@ export interface PaymentGateway {
 
 export const PaymentGateway = slot('PaymentGateway')<PaymentGateway>()
 
-export const StripeGateway = service(
-	'StripeGateway',
+export const StripePaymentGateway = PaymentGateway.implement(
+	'StripePaymentGateway',
 	{ http: HttpClient, config: Config },
 	({ http, config }) => ({
 		charge: (customerId: string, amountCents: number) =>
