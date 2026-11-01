@@ -1,4 +1,4 @@
-import { service, slot } from '@doweljs/core'
+import { slot } from '@doweljs/core'
 import { Config } from './config'
 
 export interface Logger {
@@ -17,7 +17,7 @@ export interface Metrics {
 export const Logger = slot('Logger')<Logger>()
 export const Metrics = slot('Metrics')<Metrics>()
 
-export const ConsoleLogger = service('ConsoleLogger', { config: Config }, ({ config }) => {
+export const ConsoleLogger = Logger.implement({ config: Config }, ({ config }) => {
 	const lines: string[] = []
 	const make = (prefix: string): Logger => ({
 		lines,
@@ -34,11 +34,11 @@ export const ConsoleLogger = service('ConsoleLogger', { config: Config }, ({ con
 	return make('')
 })
 
-export const MemoryMetrics = service('MemoryMetrics', () => {
+export const MemoryMetrics = Metrics.implement(() => {
 	const counters = new Map<string, number>()
 	return {
 		increment: (name: string, by = 1) => void counters.set(name, (counters.get(name) ?? 0) + by),
 		timing: (name: string, ms: number) => void counters.set(`${name}.ms`, ms),
 		snapshot: () => Object.fromEntries(counters),
-	} satisfies Metrics
+	}
 })

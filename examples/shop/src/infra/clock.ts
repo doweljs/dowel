@@ -1,4 +1,4 @@
-import { service, slot } from '@doweljs/core'
+import { slot } from '@doweljs/core'
 
 export interface Clock {
 	now(): Date
@@ -6,4 +6,4 @@ export interface Clock {
 
 export const Clock = slot('Clock')<Clock>()
 
-export const SystemClock = service('SystemClock', () => ({ now: () => new Date() }))
+export const SystemClock = Clock.implement(() => ({ now: () => new Date() }))

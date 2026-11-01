@@ -1,10 +1,10 @@
 import { appBuilder } from './container'
-import { CatalogService, ProductRepository } from './domain/catalog'
-import { NotificationService } from './domain/notifications'
-import { UserService } from './domain/users'
+import { Catalog, ProductRepository } from './domain/catalog'
+import { Notifier } from './domain/notifications'
+import { Accounts } from './domain/users'
 import { type Charge, PaymentGateway } from './infra/payments'
 import { Logger, Metrics } from './logging'
-import { Checkout, PerRequest, Request, Session } from './request'
+import { Checkout, CurrentRequest, CurrentSession, PerRequest } from './request'
 
 const out = document.getElementById('out')
 if (out === null) throw new Error('index.html has no #out element.')
@@ -46,20 +46,20 @@ await app.get(ProductRepository).seed([
 	{ id: 'p_tee', name: 'T-shirt', priceCents: 2500, stock: 10 },
 	{ id: 'p_mug', name: 'Mug', priceCents: 1200, stock: 2 },
 ])
-const alice = await app.get(UserService).register('alice@example.com', 'Alice')
-print('catalog', await app.get(CatalogService).list())
+const alice = await app.get(Accounts).register('alice@example.com', 'Alice')
+print('catalog', await app.get(Catalog).list())
 
 // One scope per request. Scoped slots are supplied here; everything that
 // depends on them is created per request and disposed with its container.
 {
 	await using request = await app.open(
 		PerRequest,
-		Request.of({ id: 'req_1', method: 'POST', path: '/checkout', headers: {} }),
-		Session.of({ userId: alice.id }),
+		CurrentRequest.of({ id: 'req_1', method: 'POST', path: '/checkout', headers: {} }),
+		CurrentSession.of({ userId: alice.id }),
 	)
 	print('order', await request.get(Checkout).placeOrder([{ productId: 'p_tee', quantity: 2 }]))
 }
 
-print('delivered receipts', await app.get(NotificationService).deliverPending())
+print('delivered receipts', await app.get(Notifier).deliverPending())
 print('metrics', app.get(Metrics).snapshot())
 print('log', app.get(Logger).lines.join('\n'))

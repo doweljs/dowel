@@ -1,4 +1,4 @@
-import { service, slot } from '@doweljs/core'
+import { slot } from '@doweljs/core'
 import { Logger, Metrics } from '../logging'
 
 /** Turns a response body into what a caller expects, or throws saying what is wrong with it. */
@@ -12,8 +12,7 @@ export interface HttpClient {
 export const HttpClient = slot('HttpClient')<HttpClient>()
 
 /** Wraps fetch with logging and metrics. */
-export const FetchClient = service(
-	'FetchClient',
+export const FetchHttpClient = HttpClient.implement(
 	{ log: Logger, metrics: Metrics },
 	({ log, metrics }) => {
 		const logger = log.child('http')
@@ -30,6 +29,6 @@ export const FetchClient = service(
 				if (!response.ok) throw new Error(`POST ${url} failed with status ${response.status}.`)
 				return decode(await response.json())
 			},
-		} satisfies HttpClient
+		}
 	},
 )
