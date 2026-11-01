@@ -23,7 +23,7 @@ import type {
 	MissingBindings,
 } from './model/diagnostics.ts'
 import type { NeededBy } from './model/graph.ts'
-import type { BindingMetaOf, Impl, ImplAt, MetaOf } from './model/infer.ts'
+import type { BindingMetaOf, Impl, ImplAt, ImplOf, MetaOf } from './model/infer.ts'
 import type {
 	BoundExecutionInputs,
 	BoundNames,
@@ -151,7 +151,7 @@ export interface ContainerBuilder<S extends ContainerState> {
 			| NoInfer<T>
 			| ImplAt<T, M>
 			| Implementation<T, ImplementationMeta & { readonly scope: M['scope'] | M['above'] }>,
-	>(target: Overridable<T, M>, impl: I): ContainerBuilder<Override<S, TargetOf<M>, I>>
+	>(target: Overridable<T, M>, impl: I): ContainerBuilder<Override<S, TargetOf<M>, ImplOf<I>>>
 
 	/**
 	 * Apply a reusable composition function. Write it generic in the state so

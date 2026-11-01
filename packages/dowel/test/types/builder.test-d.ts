@@ -17,7 +17,7 @@ import {
 	service,
 	slot,
 } from '../../src/index.ts'
-import { Config, Logger, test, Users } from './support.ts'
+import { Config, Logger, PerRequest, Request, test, Users } from './support.ts'
 
 test('multi-bindings', () => {
 	type Middleware = (next: () => void) => void
@@ -202,4 +202,24 @@ test('diagnostics list every name, not the type that computes them', () => {
 	expectTypeOf(container().provide(Runs).build).toEqualTypeOf<
 		IncompleteExecutions<{ readonly Run: 'X' | 'Y' }>
 	>()
+})
+
+test('a value typed any, such as what JSON.parse() returns, binds as a value', async () => {
+	const loose: any = JSON.parse('{}')
+	const Items = slot('Items', { many: true })<number>()
+	const Uses = service('Uses', { log: Logger, items: Items }, (d) => d)
+	const Handler = service('Handler', { req: Request }, ({ req }) => req.url)
+
+	expectTypeOf(container().provide(Uses).bind(Logger, loose).build).toBeFunction()
+	expectTypeOf(
+		container().provide(Uses).bind(Logger, console).contribute(Items, loose).build,
+	).toBeFunction()
+	expectTypeOf(container().provide(Uses, Logger.of(loose), Items.of(loose)).build).toBeFunction()
+	expectTypeOf(
+		container().provide(Uses).bind(Logger, console).override(Logger, loose).build,
+	).toBeFunction()
+
+	const app = await container().provide(Handler).build()
+	const request = await app.open(PerRequest, Request.of(loose))
+	expectTypeOf(request.get(Handler)).toEqualTypeOf<string>()
 })
