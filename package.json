@@ -15,7 +15,7 @@
 		"knip": "knip",
 		"format": "biome format --write .",
 		"check": "bun run lint && bun run typecheck && bun run typecheck:ts59 && bun run typecheck:budget && bun run test && bun run check:package && bun run knip",
-		"typecheck:ts59": "node node_modules/typescript59/bin/tsc -p packages/dowel/tsconfig.json --noEmit",
+		"typecheck:ts59": "node node_modules/typescript59/bin/tsc -p packages/dowel/tsconfig.json --noEmit && node node_modules/typescript59/bin/tsc -p packages/dowel/tsconfig.loose.json --noEmit",
 		"typecheck:budget": "bun scripts/type-budget.ts",
 		"check:package": "bun scripts/check-package.ts",
 		"scale": "bun scripts/generate-scale.ts",

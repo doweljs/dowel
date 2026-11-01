@@ -1,0 +1,7 @@
+{
+	// The type tests again with exactOptionalPropertyTypes off, TypeScript's default, so a type
+	// that only holds with it on (such as `undefined` in a slot's type) can't regress unseen.
+	"extends": "./tsconfig.json",
+	"compilerOptions": { "exactOptionalPropertyTypes": false },
+	"exclude": ["test/types/exact-optional.test-d.ts"]
+}

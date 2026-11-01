@@ -42,7 +42,7 @@ export interface Slot<T, M extends SlotMeta = SlotMeta> {
 	readonly '~kind': 'slot'
 	readonly name: M['name']
 	readonly scope: M['scope']
-	readonly '~type'?: T
+	readonly '~type'?: readonly [T]
 	readonly '~meta'?: M
 }
 
@@ -96,7 +96,7 @@ export interface Service<T, M extends ServiceMeta = ServiceMeta> {
 	readonly '~kind': 'service'
 	readonly name: M['name']
 	readonly scope: M['scope']
-	readonly '~type'?: T
+	readonly '~type'?: readonly [T]
 	readonly '~meta'?: M
 }
 
@@ -115,7 +115,7 @@ export interface ImplementationMeta extends Placement {
 
 export interface Implementation<T, M extends ImplementationMeta = ImplementationMeta> {
 	readonly '~kind': 'implementation'
-	readonly '~type'?: T
+	readonly '~type'?: readonly [T]
 	readonly '~meta'?: M
 }
 
@@ -134,7 +134,7 @@ export interface Execution<T, M extends ExecutionMeta = ExecutionMeta> {
 	readonly '~kind': 'execution'
 	readonly name: M['name']
 	readonly scope: M['scope']
-	readonly '~type'?: T
+	readonly '~type'?: readonly [T]
 	readonly '~meta'?: M
 }
 
@@ -160,7 +160,7 @@ export interface BindingMeta {
 export interface Binding<T, M extends BindingMeta = BindingMeta> {
 	readonly '~kind': 'binding'
 	readonly slot: Slot<any, SlotMeta>
-	readonly '~type'?: T
+	readonly '~type'?: readonly [T]
 	readonly '~meta'?: M
 }
 

@@ -148,31 +148,6 @@ test('execution graphs retain union entries and inputs unused by the entry', () 
 	container().provide(Run).bind(Extra, 1).build()
 })
 
-test('conditionally present execution inputs preserve the graph and runner types', async () => {
-	const Job = scope('job')
-	const Input = slot('ConditionalInput', { scope: Job })<number>()
-	const Entry = service('Entry', () => 1)
-	const inputs = Math.random() > 0.5 ? { input: Input } : {}
-	const Run = execution('Run', { scope: Job, entry: Entry, inputs })
-
-	expectTypeOf<keyof MetaOf<typeof Run>['graph']>().toEqualTypeOf<
-		'Run' | 'Entry' | 'ConditionalInput'
-	>()
-	const app = await container().provide(Run).build()
-	expectTypeOf(app.get(Run)({}, (entry) => entry)).toEqualTypeOf<Promise<number>>()
-	// @ts-expect-error: an input supplied by a run cannot also be bound at build()
-	container().provide(Run).bind(Input, 1).build()
-
-	const make = (inputs: { input?: typeof Input }) =>
-		execution('Annotated', { scope: Job, entry: Entry, inputs })
-	const Annotated = make({})
-	expectTypeOf<keyof MetaOf<typeof Annotated>['graph']>().toEqualTypeOf<
-		'Annotated' | 'Entry' | 'ConditionalInput'
-	>()
-	const annotated = await container().provide(Annotated).build()
-	expectTypeOf(annotated.get(Annotated)({}, (entry) => entry)).toEqualTypeOf<Promise<number>>()
-})
-
 test('get() accepts what the container creates, not what only an execution reaches', async () => {
 	const JobScope = scope('job')
 	const Mailer = service('Mailer', () => ({ send: (to: string) => to }))

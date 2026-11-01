@@ -382,7 +382,7 @@ export type GetResult<N, S extends ContainerState, Supplied extends string = nev
 /** A slot or service, matched structurally so one signature covers both. */
 export type Overridable<T, M> = {
 	readonly '~kind': 'service' | 'slot'
-	readonly '~type'?: T
+	readonly '~type'?: readonly [T]
 	readonly '~meta'?: M
 }
 
