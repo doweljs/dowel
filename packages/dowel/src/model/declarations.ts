@@ -4,7 +4,9 @@
  * `~`-prefixed properties.
  */
 
+import type { DeclaredName } from './checks.ts'
 import type { Graph } from './graph.ts'
+import type { BindingMetaOf, Impl } from './infer.ts'
 
 export interface ScopeMeta {
 	readonly name: string
@@ -41,6 +43,24 @@ export interface Slot<T, M extends SlotMeta = SlotMeta> {
 	readonly scope: M['scope']
 	readonly '~type'?: T
 	readonly '~meta'?: M
+}
+
+/**
+ * A slot as `slot()` declares it, with what can be done with it. Kept apart
+ * from {@link Slot}, which is what dependencies and bindings accept, so that
+ * relating two slots never compares these generic methods.
+ */
+export interface DeclaredSlot<T, M extends SlotMeta = SlotMeta> extends Slot<T, M> {
+	/**
+	 * Bind the slot to a value or a service, or contribute one item to a
+	 * multi-binding, for `open()` or `provide()`. Bound values are borrowed:
+	 * the container never disposes them.
+	 */
+	of<const I extends Impl<T, M>>(
+		impl: I & DeclaredName<Slot<T, M>>,
+	): Binding<T, BindingMetaOf<M, I>>
+	/** Depend on the slot without requiring it bound; the factory receives `undefined` when it is not. */
+	optional(): Optional<Slot<T, M>>
 }
 
 export type AnySlot = Slot<any, SlotMeta>

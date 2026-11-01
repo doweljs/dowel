@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { bind, type Infer } from '@doweljs/core'
+import type { Infer } from '@doweljs/core'
 import { ProductRepository } from '../src/domain/catalog'
 import { NotificationService } from '../src/domain/notifications'
 import type { OrderItem } from '../src/domain/orders'
@@ -25,8 +25,8 @@ async function seed(products: Infer<typeof ProductRepository>, users: Infer<type
 async function checkout(app: TestApp, userId: string | null, items: readonly OrderItem[]) {
 	await using request = await app.open(
 		PerRequest,
-		bind(Request, { id: 'req', method: 'POST', path: '/checkout', headers: {} }),
-		bind(Session, { userId }),
+		Request.of({ id: 'req', method: 'POST', path: '/checkout', headers: {} }),
+		Session.of({ userId }),
 	)
 	return request.get(Checkout).placeOrder(items)
 }
@@ -61,8 +61,8 @@ describe('checkout', () => {
 
 		await using request = await app.open(
 			PerRequest,
-			bind(Request, { id: 'req', method: 'POST', path: '/checkout', headers: {} }),
-			bind(Session, { userId: user.id }),
+			Request.of({ id: 'req', method: 'POST', path: '/checkout', headers: {} }),
+			Session.of({ userId: user.id }),
 		)
 		const order = await request.get(Checkout).placeOrder([{ productId: 'p', quantity: 1 }])
 		expect(order.status).toBe('declined')

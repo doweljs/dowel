@@ -57,7 +57,7 @@ export function supply(
 		if (!supplied.has(name)) {
 			throw new DowelError(
 				'MISSING_SCOPE_VALUE',
-				`Slot '${name}' needs a value when '${scopePlan.scope.name}' is opened. Pass bind(${name}, value).`,
+				`Slot '${name}' needs a value when '${scopePlan.scope.name}' is opened. Pass ${name}.of(value).`,
 			)
 		}
 	}

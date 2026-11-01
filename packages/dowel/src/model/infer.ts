@@ -98,7 +98,7 @@ export type ImplAt<T, Sc extends Placement> = Service<
 	ServiceMeta & { readonly scope: Sc['scope'] | Sc['above'] }
 >
 
-/** What `bind()` accepts for a slot: the value, a service producing it, or for multi-bindings one item. */
+/** What `.bind()` and `Slot.of()` accept for a slot: the value, a service producing it, or for multi-bindings one item. */
 export type Impl<T, TM extends SlotMeta> = TM['many'] extends true
 	? NoInfer<ItemOf<T>> | ImplAt<ItemOf<T>, TM>
 	: NoInfer<T> | ImplAt<T, TM>

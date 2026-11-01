@@ -1,4 +1,4 @@
-import { optional, service } from '@doweljs/core'
+import { service } from '@doweljs/core'
 import { Database, type Transaction } from '../infra/database'
 import { IdGenerator } from '../infra/ids'
 import { type Charge, PaymentGateway } from '../infra/payments'
@@ -73,7 +73,7 @@ export const OrderService = service(
 		queue: Queue,
 		ids: IdGenerator,
 		log: Logger,
-		metrics: optional(Metrics),
+		metrics: Metrics.optional(),
 		db: Database,
 	},
 	({ orders, pricing, payments, queue, ids, log, metrics, db }) => {

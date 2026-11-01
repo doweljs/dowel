@@ -1,4 +1,3 @@
-import { bind } from '@doweljs/core'
 import { appBuilder } from './container'
 import { CatalogService, ProductRepository } from './domain/catalog'
 import { NotificationService } from './domain/notifications'
@@ -55,8 +54,8 @@ print('catalog', await app.get(CatalogService).list())
 {
 	await using request = await app.open(
 		PerRequest,
-		bind(Request, { id: 'req_1', method: 'POST', path: '/checkout', headers: {} }),
-		bind(Session, { userId: alice.id }),
+		Request.of({ id: 'req_1', method: 'POST', path: '/checkout', headers: {} }),
+		Session.of({ userId: alice.id }),
 	)
 	print('order', await request.get(Checkout).placeOrder([{ productId: 'p_tee', quantity: 2 }]))
 }

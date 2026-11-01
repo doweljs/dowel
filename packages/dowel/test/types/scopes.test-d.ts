@@ -4,10 +4,8 @@
  */
 import { expectTypeOf } from 'bun:test'
 import {
-	bind,
 	type Container,
 	container,
-	optional,
 	type ReservedScopeName,
 	scope,
 	service,
@@ -20,11 +18,15 @@ import { Logger, test, Users } from './support.ts'
 test('a container remembers the optional slots it was opened with', async () => {
 	const PerVisit = scope('visit')
 	const Visitor = slot('Visitor', { scope: PerVisit })<{ id: string }>()
-	const Greeting = service('Greeting', { visitor: optional(Visitor) }, ({ visitor }) => visitor?.id)
+	const Greeting = service(
+		'Greeting',
+		{ visitor: Visitor.optional() },
+		({ visitor }) => visitor?.id,
+	)
 	const app = await container().provide(Greeting).build()
 	const anonymous = await app.open(PerVisit)
 	expectTypeOf(anonymous.get(Visitor)).toEqualTypeOf<{ id: string } | undefined>()
-	const known = await app.open(PerVisit, bind(Visitor, { id: 'v' }))
+	const known = await app.open(PerVisit, Visitor.of({ id: 'v' }))
 	expectTypeOf(known.get(Visitor)).toEqualTypeOf<{ id: string }>()
 })
 
@@ -61,10 +63,10 @@ test('nested scopes', () => {
 
 	// Bindings must live at or above the slot.
 	const ReqImpl = service('ReqImpl', { sess: Sess }, () => ({ url: '/' }))
-	bind(Req, ReqImpl)
+	Req.of(ReqImpl)
 	const SessImpl = service('SessImpl', { req: Req }, () => ({ id: '1' }))
 	// @ts-expect-error: a request-scope service cannot implement a session-scope slot
-	bind(Sess, SessImpl)
+	Sess.of(SessImpl)
 
 	const app = container()
 		.provide(Handler)
@@ -73,15 +75,15 @@ test('nested scopes', () => {
 	expectTypeOf(app).resolves.toMatchTypeOf<Container<any>>()
 	void (async () => {
 		const built = await app
-		const sessionScope = await built.open(SessionScope, bind(Sess, { id: 's' }))
+		const sessionScope = await built.open(SessionScope, Sess.of({ id: 's' }))
 		expectTypeOf(sessionScope).toMatchTypeOf<Container<any, any>>()
-		const requestScope = await sessionScope.open(RequestScope, bind(Req, { url: '/' }))
+		const requestScope = await sessionScope.open(RequestScope, Req.of({ url: '/' }))
 		expectTypeOf(requestScope.get(Handler).req.url).toEqualTypeOf<string>()
 		expectTypeOf(requestScope.get(Sess).id).toEqualTypeOf<string>()
 		// @ts-expect-error: request-scope nodes are not visible from a session scope
 		sessionScope.get(Handler)
 		// @ts-expect-error: request is not a child of root
-		built.open(RequestScope, bind(Req, { url: '/' }))
+		built.open(RequestScope, Req.of({ url: '/' }))
 		// @ts-expect-error: the session value is required
 		built.open(SessionScope)
 	})()

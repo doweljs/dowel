@@ -3,7 +3,7 @@
  * below are deliberately invalid and would throw at runtime.
  */
 import { expectTypeOf } from 'bun:test'
-import { bind, container, execution, scope, service, slot } from '../../src/index.ts'
+import { container, execution, scope, service, slot } from '../../src/index.ts'
 import { Config, Logger, PerRequest, Request, test, Users } from './support.ts'
 
 test('the types reject what build() and open() reject at runtime', async () => {
@@ -62,11 +62,11 @@ test('the types reject what build() and open() reject at runtime', async () => {
 		.bind(Logger, { info() {} })
 		.build()
 	// @ts-expect-error: In lives in 'job'
-	app.open(PerRequest, bind(Request, { url: '/' }), bind(In, 'x'))
+	app.open(PerRequest, Request.of({ url: '/' }), In.of('x'))
 	// @ts-expect-error: Logger is bound at build()
-	app.open(PerRequest, bind(Request, { url: '/' }), bind(Logger, { info() {} }))
+	app.open(PerRequest, Request.of({ url: '/' }), Logger.of({ info() {} }))
 	// @ts-expect-error: a multi-binding
-	app.open(JobScope, bind(Items, 1))
+	app.open(JobScope, Items.of(1))
 
 	// A detached build is still the method.
 	const { build } = container().provide(Config)

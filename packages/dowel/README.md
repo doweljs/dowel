@@ -51,6 +51,11 @@ const Middleware = slot('Middleware', { many: true })<Middleware>()
 
 Names are unique within a container: the type system identifies nodes by name.
 
+A slot also carries what can be done with it:
+
+- `Request.of(req)` binds it to a value or a service for `open()`, or contributes one item to a multi-binding.
+- `Metrics.optional()` depends on it without requiring it bound.
+
 ## Services
 
 A service lists its dependencies as values. Its requirements, its scope and whether it is async follow from them.
@@ -58,7 +63,7 @@ A service lists its dependencies as values. Its requirements, its scope and whet
 ```ts
 const Users = service(
 	'Users',
-	{ db: Db, log: Logger, metrics: optional(Metrics) },
+	{ db: Db, log: Logger, metrics: Metrics.optional() },
 	({ db, log, metrics }, ctx) => {
 		ctx.defer(() => log.info('Users disposed'))
 		return {
@@ -141,7 +146,7 @@ Overrides are exact: override `Db` with a fake, and nothing that only `Db` neede
 A scope is a lifetime shorter than the app's, such as one request. `open()` creates a child container for it, with the scope's slots bound to values; a missing value is a compile error naming the slot and what needs it.
 
 ```ts
-await using request = await app.open(PerRequest, bind(Request, req))
+await using request = await app.open(PerRequest, Request.of(req))
 request.get(CurrentUser) // created once per opened container
 request.get(Users) // root-scope services are shared
 ```
@@ -162,8 +167,8 @@ const Req = slot('Req', { scope: Request })<IncomingRequest>()
 const Cart = service('Cart', { sess: Sess }, …)                  // lives in 'session'
 const Handler = service('Handler', { req: Req, cart: Cart }, …)  // lives in 'request'
 
-await using session = await app.open(Session, bind(Sess, data))
-await using request = await session.open(Request, bind(Req, req))
+await using session = await app.open(Session, Sess.of(data))
+await using request = await session.open(Request, Req.of(req))
 request.get(Handler)   // sees request, session and root
 session.get(Handler)   // error: NotVisible<"Handler", "request">
 app.open(Request, …)   // error: NotChildScope<"request", "root">

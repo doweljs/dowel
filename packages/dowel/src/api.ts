@@ -123,13 +123,13 @@ export interface ContainerBuilder<S extends ContainerState> {
 		...items: I & KnownLength<I>
 	): ContainerBuilder<ProvideAll<S, I>>
 
-	/** Shorthand for `provide(bind(slot, impl))`. */
+	/** Shorthand for `provide(slot.of(impl))`. */
 	bind<T, TM extends SlotMeta, const I extends Impl<T, TM>>(
 		slot: Slot<T, TM>,
 		impl: I,
 	): ContainerBuilder<Provide<S, Binding<T, BindingMetaOf<TM, I>>>>
 
-	/** Contribute one item to a multi-binding slot. The same as `bind()` for such slots, named for clarity. */
+	/** Contribute one item to a multi-binding slot. The same as `.bind()` for such slots, named for clarity. */
 	contribute<T, TM extends SlotMeta & { readonly many: true }, const I extends Impl<T, TM>>(
 		slot: Slot<T, TM>,
 		impl: I,

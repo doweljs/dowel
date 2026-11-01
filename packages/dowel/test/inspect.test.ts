@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { bind, container, type DowelError, scope, service, slot } from '../src/index.ts'
+import { container, type DowelError, scope, service, slot } from '../src/index.ts'
 import { Logger, memoryLogger, PerRequest, Request } from './support.ts'
 
 describe('inspect', () => {
@@ -36,7 +36,7 @@ describe('inspect', () => {
 			items: [{ kind: 'service', name: 'One' }, { kind: 'value' }],
 		})
 		expect(byName.get('Many')!.deps).toEqual([{ key: '0', name: 'One' }])
-		const child = await app.open(PerRequest, bind(Request, { url: '/' }))
+		const child = await app.open(PerRequest, Request.of({ url: '/' }))
 		expect(child.inspect().find((n) => n.name === 'Svc')!.status).toBe('ready')
 	})
 
@@ -45,7 +45,7 @@ describe('inspect', () => {
 		const SideSvc = service('SideSvc', () => 1, { scope: Side })
 		const ReqSvc = service('ReqSvc', { req: Request }, () => 1)
 		const app = await container().provide(SideSvc, ReqSvc).build()
-		const child = await app.open(PerRequest, bind(Request, { url: '/' }))
+		const child = await app.open(PerRequest, Request.of({ url: '/' }))
 		const byName = new Map(child.inspect().map((node) => [node.name, node]))
 		expect(byName.get('ReqSvc')!.status).toBe('ready')
 		expect(byName.get('SideSvc')!.status).toBeNull()

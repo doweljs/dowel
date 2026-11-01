@@ -1,5 +1,5 @@
 // Runs the installed package under Node, outside any TypeScript tooling.
-import { bind, container, execution, scope, service, slot } from '@doweljs/core'
+import { container, execution, scope, service, slot } from '@doweljs/core'
 
 const PerRequest = scope('request')
 const Req = slot('Req', { scope: PerRequest })()
@@ -18,7 +18,7 @@ const Run = execution('Run', {
 })
 
 const app = await container().provide(Current, Run).build()
-const request = await app.open(PerRequest, bind(Req, { url: '/a' }))
+const request = await app.open(PerRequest, Req.of({ url: '/a' }))
 const results = [request.get(Current), await app.get(Run)({ input: 21 }, (n) => n)]
 await request.dispose()
 await app.dispose()

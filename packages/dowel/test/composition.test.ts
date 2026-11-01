@@ -1,14 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import {
-	bind,
-	container,
-	DowelError,
-	execution,
-	optional,
-	scope,
-	service,
-	slot,
-} from '../src/index.ts'
+import { container, DowelError, execution, scope, service, slot } from '../src/index.ts'
 import { Logger, memoryLogger, Request, untyped } from './support.ts'
 
 describe('multi-bindings', () => {
@@ -140,21 +131,21 @@ describe('validation', () => {
 
 	test('a required edge keeps a slot required even when another edge is optional', async () => {
 		const Metrics = slot('Metrics')<number>()
-		const Loose = service('Loose', { m: optional(Metrics) }, ({ m }) => m)
+		const Loose = service('Loose', { m: Metrics.optional() }, ({ m }) => m)
 		const Strict = service('Strict', { m: Metrics }, ({ m }) => m)
 		await expect(untyped(container().provide(Loose, Strict)).build()).rejects.toThrow(/not bound/)
-		const Both = service('Both', { a: Metrics, b: optional(Metrics) }, ({ a }) => a)
+		const Both = service('Both', { a: Metrics, b: Metrics.optional() }, ({ a }) => a)
 		await expect(untyped(container().provide(Both)).build()).rejects.toThrow(/not bound/)
 	})
 
 	test('binding a root slot to a scoped service is rejected', () => {
 		const Scoped = service('Scoped', { req: Request }, () => memoryLogger())
-		expect(() => bind(Logger, untyped(Scoped))).toThrow(DowelError)
+		expect(() => Logger.of(untyped(Scoped))).toThrow(DowelError)
 	})
 
 	test('duplicate bindings and names are rejected', async () => {
 		expect(() =>
-			container().bind(Logger, memoryLogger()).provide(bind(Logger, memoryLogger())),
+			container().bind(Logger, memoryLogger()).provide(Logger.of(memoryLogger())),
 		).toThrow(/already bound/)
 		const A = service('Same', () => 1)
 		const B = service('Same', () => 2)
@@ -209,7 +200,7 @@ describe('declaration rules mirror the types', () => {
 
 	test('only services and values can stand in for a node', () => {
 		const Other = slot('Other')<{ info(message: string): void }>()
-		expect(() => bind(Logger, untyped(Other))).toThrow(/Slot 'Other' cannot stand in/)
+		expect(() => Logger.of(untyped(Other))).toThrow(/Slot 'Other' cannot stand in/)
 	})
 
 	test('nodes from another copy of dowel are named as such', () => {
@@ -218,7 +209,8 @@ describe('declaration rules mirror the types', () => {
 			name: 'Foreign',
 			[Symbol('dowel.internal')]: { kind: 'slot', id: 0, name: 'Foreign' },
 		})
-		expect(() => bind(untyped(foreign), 1)).toThrow(/different copy of dowel/)
+		// A foreign slot's own methods belong to its copy, so the check is where this copy receives it.
+		expect(() => container().bind(untyped(foreign), 1)).toThrow(/different copy of dowel/)
 	})
 
 	test('a service keeps the dependencies it was declared with', async () => {
@@ -236,5 +228,21 @@ describe('declaration rules mirror the types', () => {
 		expect(() => service('Cross', { l: OnLeft }, (d) => d, { scope: untyped(Right) })).toThrow(
 			/different scope branch/,
 		)
+	})
+})
+
+describe('slot methods', () => {
+	test('are shared by every slot rather than copied onto each', () => {
+		const A = slot('A')<number>()
+		const B = slot('B')<number>()
+		expect(untyped(A.of)).toBe(B.of)
+		expect(Object.keys(A)).toEqual(['~kind', 'name', 'scope'])
+	})
+
+	test('optional() depends on the slot without requiring it bound', async () => {
+		const Maybe = slot('Maybe')<number>()
+		const Reads = service('Reads', { maybe: Maybe.optional() }, ({ maybe }) => maybe ?? 'unbound')
+		await using app = await container().provide(Reads).build()
+		expect(app.get(Reads)).toBe('unbound')
 	})
 })
