@@ -173,9 +173,20 @@ export type MissingInputsOf<G extends Graph, Name extends string> = Exclude<
 
 type NonEmpty<T> = { readonly [K in keyof T as [T[K]] extends [never] ? never : K]: T[K] }
 
-/** Reachable executions whose inputs are incomplete, with the slots they lack. */
+/**
+ * Reachable executions whose inputs are incomplete, with the slots they lack.
+ * Each set is rebuilt by an unnamed mapped type so it prints as its members,
+ * as in {@link NeededBy}.
+ */
 export type MissingInputs<G extends Graph, Roots extends string> = NonEmpty<{
-	readonly [E in ExecutionsIn<G, Reach<G, Roots>>]: MissingInputsOf<G, E>
+	// Through infer: a mapped type over the generic set itself would have TypeScript prove the set is
+	// made of keys while it's unresolved, which recurses through the whole reach.
+	readonly [E in ExecutionsIn<G, Reach<G, Roots>>]: MissingInputsOf<
+		G,
+		E
+	> extends infer Slots extends string
+		? { readonly [K in Slots]: K }[Slots]
+		: never
 }>
 
 /** Names whose value the composition decides: bound, contributed to or overridden. */
@@ -190,12 +201,12 @@ export type BoundInputs<G extends Graph, Roots extends string> = NonEmpty<{
 		: never
 }>
 
-/** The names that depend on a given name. */
-type DependentsOf<G extends Graph, Name extends string> = {
-	[K in keyof G]: Name extends G[K]['deps'] ? K : never
-}[keyof G]
-
-/** `{ Logger: "Users" | "Mailer" }`: each missing slot with the nodes that need it. */
+/**
+ * `{ Logger: "Users" | "Mailer" }`: each missing slot with the nodes that need
+ * it. The union is computed in place rather than by a named alias: TypeScript
+ * prints a union an alias produced as the alias, graph and all, instead of
+ * its members.
+ */
 export type NeededBy<G extends Graph, Names extends string> = {
-	readonly [N in Names]: DependentsOf<G, N>
+	readonly [N in Names]: { [K in keyof G]: N extends G[K]['deps'] ? K : never }[keyof G]
 }
