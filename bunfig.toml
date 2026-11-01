@@ -1,2 +1,6 @@
 [test]
 root = "."
+
+[install]
+exact = true
+minimumReleaseAge = "3d"
