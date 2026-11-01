@@ -102,6 +102,7 @@ export function init(plan: CachedPlan, chain: Chain): unknown {
 		cleanups: [],
 		disposed: false,
 		controller: null,
+		inFlight: null,
 	}
 	store.starting.add(record)
 	const { values, waiting } = dependencies(plan, chain, store, record)
@@ -212,10 +213,14 @@ function settle(store: Store, cell: number, record: InstanceRecord, instance: un
 			)
 		})
 	}
-	store.cells[cell] = instance
+	const kept =
+		typeof instance === 'function' && record.plan.kind === 'service' && record.plan.track
+			? tracked(instance, record, store)
+			: instance
+	store.cells[cell] = kept
 	if (store.pending !== null) store.pending[cell] = undefined
 	store.records.push(record)
-	return instance
+	return kept
 }
 
 /** A factory failed: whatever it adopted before failing is disposed, and the failure carries any cleanup failure. */
@@ -247,4 +252,37 @@ export function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
 		value !== null &&
 		typeof (value as { then?: unknown }).then === 'function'
 	)
+}
+
+/**
+ * A function instance whose calls the record tracks: each returned promise
+ * until it settles, so disposal can wait for it. Only calling is
+ * intercepted; `new`, properties and `this` reach the function unchanged.
+ */
+function tracked(instance: Function, record: InstanceRecord, store: Store): Function {
+	return new Proxy(instance, {
+		apply(target, thisArg, args) {
+			// A call during cancellation proceeds, with ctx.signal aborted, so it stops as it would; waiting on it can't hang.
+			if (store.cancelled) {
+				record.controller ??= new AbortController()
+				if (!record.controller.signal.aborted) record.controller.abort(store.why!())
+			}
+			if (record.disposed) {
+				throw new DowelError(
+					'DISPOSED',
+					`Service '${record.plan.name}' has been disposed, so it can no longer be called.`,
+				)
+			}
+			const result: unknown = Reflect.apply(target, thisArg, args)
+			if (isPromiseLike(result)) {
+				const call = Promise.resolve(result)
+				record.inFlight ??= new Set()
+				const calls = record.inFlight
+				calls.add(call)
+				const settled = () => calls.delete(call)
+				call.then(settled, settled)
+			}
+			return result
+		},
+	})
 }

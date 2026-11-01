@@ -20,6 +20,8 @@ export interface ServicePlan extends PlanBase {
 	readonly kind: 'service'
 	readonly cell: number
 	readonly factory: Factory
+	/** Whether calls to a function instance are tracked. */
+	readonly track: boolean
 }
 
 /** A multi-binding: its contributions, collected once per store in its scope into `cell`. */

@@ -34,6 +34,14 @@ type CheckScope<D extends Deps, Sc extends AnyScope> = InferredScope<D>['name'] 
 export interface ServiceOptions<D extends Deps, Sc extends AnyScope> {
 	/** A deeper scope than the dependencies imply, such as one unit of work per request. Default: the deepest dependency's. */
 	readonly scope?: Sc & DeclaredScope<Sc> & CheckScope<D, Sc>
+	/**
+	 * For a service whose instance is a function: whether its calls are tracked.
+	 * Default `true`: each call's promise is awaited, after `ctx.signal` aborts,
+	 * before the instance's own disposers run and its dependencies are
+	 * disposed, and calls are refused once its disposal starts. Pass `false`
+	 * when callers own what a call starts, such as a stream it returns.
+	 */
+	readonly track?: boolean
 }
 
 type ExplicitScope<Sc extends AnyScope> = [Sc] extends [never]
@@ -132,7 +140,7 @@ export function declareService(
 		standalone
 			? [{}, (_deps: unknown, ctx: ServiceContext) => (rest[0] as Function)(ctx), rest[1]]
 			: rest
-	) as [Deps, Factory, { readonly scope?: AnyScope } | undefined]
+	) as [Deps, Factory, { readonly scope?: AnyScope; readonly track?: boolean } | undefined]
 
 	let inferred: ScopeNode = ROOT
 	for (const [key, dep] of Object.entries(deps)) {
@@ -184,6 +192,7 @@ export function declareService(
 		// Copied, so changing the object afterwards cannot change the graph its scope was checked against.
 		deps: Object.freeze({ ...deps }),
 		factory,
+		track: options?.track !== false,
 		implements: implemented,
 		anonymous,
 	}

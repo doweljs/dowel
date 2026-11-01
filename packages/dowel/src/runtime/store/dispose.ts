@@ -13,6 +13,10 @@ export async function disposeRecords(
 	for (let i = records.length - 1; i >= 0; i--) {
 		const record = records[i]!
 		markDisposed(record)
+		// A tracked function's calls stop using what it owns, and its dependencies, before either goes.
+		if (record.inFlight !== null && record.inFlight.size > 0) {
+			await Promise.allSettled(record.inFlight)
+		}
 		const { cleanups, owned } = record
 		for (let j = cleanups.length - 1; j >= 0; j--) {
 			const { dispose, resource } = cleanups[j]!

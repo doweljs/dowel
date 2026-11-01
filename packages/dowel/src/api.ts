@@ -65,7 +65,9 @@ export interface ServiceContext {
 	defer(dispose: () => void | PromiseLike<void>): void
 	/**
 	 * Aborted when disposal of the instance starts, even while its factory
-	 * still runs. Pass it to slow startup work, which disposal waits for.
+	 * still runs. Pass it to slow startup work, which disposal waits for. For a
+	 * tracked function, it also aborts when its container's disposal starts
+	 * while calls are in flight, or a call starts after that.
 	 *
 	 * ```ts
 	 * const client = ctx.use(await connect(url, { signal: ctx.signal }))
