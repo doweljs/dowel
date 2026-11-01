@@ -29,6 +29,7 @@ import type {
 	ScopeBindingsForMultiBindings,
 	ScopeBindingsMustBeValues,
 	UnknownLengthItems,
+	UntypedScopeBindings,
 } from './diagnostics.ts'
 import type {
 	BoundInputs,
@@ -349,6 +350,12 @@ type BindingsWhere<B extends readonly AnyBinding[], Kind, Scope> = B[number] ext
 		: never
 	: never
 
+/** Positions of the bindings in `B` whose type is `any`, which every other check would misread. */
+type UntypedBindings<B extends readonly AnyBinding[]> = Extract<
+	{ [K in keyof B]: 0 extends 1 & B[K] ? K : never }[number],
+	string
+>
+
 type ManyBindings<B extends readonly AnyBinding[]> = BindingsWhere<B, 'many', string>
 type NonValueBindings<B extends readonly AnyBinding[]> = BindingsWhere<B, 'bound', string>
 
@@ -385,17 +392,19 @@ export type OpenCheck<
 	S extends ContainerState,
 	Sc extends string,
 	B extends readonly AnyBinding[],
-> = [ManyBindings<B>] extends [never]
-	? [NonValueBindings<B>] extends [never]
-		? [OtherScopeBindings<B, Sc>] extends [never]
-			? [BuildBoundBindings<S, B>] extends [never]
-				? [ScopeMissing<S, Sc, B>] extends [never]
-					? unknown
-					: MissingScopeValues<Simplify<NeededBy<S['graph'], ScopeMissing<S, Sc, B>>>>
-				: ScopeBindingsBoundAtBuild<BuildBoundBindings<S, B>>
-			: ScopeBindingsAtOtherScopes<OtherScopeBindings<B, Sc>>
-		: ScopeBindingsMustBeValues<NonValueBindings<B>>
-	: ScopeBindingsForMultiBindings<ManyBindings<B>>
+> = [UntypedBindings<B>] extends [never]
+	? [ManyBindings<B>] extends [never]
+		? [NonValueBindings<B>] extends [never]
+			? [OtherScopeBindings<B, Sc>] extends [never]
+				? [BuildBoundBindings<S, B>] extends [never]
+					? [ScopeMissing<S, Sc, B>] extends [never]
+						? unknown
+						: MissingScopeValues<Simplify<NeededBy<S['graph'], ScopeMissing<S, Sc, B>>>>
+					: ScopeBindingsBoundAtBuild<BuildBoundBindings<S, B>>
+				: ScopeBindingsAtOtherScopes<OtherScopeBindings<B, Sc>>
+			: ScopeBindingsMustBeValues<NonValueBindings<B>>
+		: ScopeBindingsForMultiBindings<ManyBindings<B>>
+	: UntypedScopeBindings<UntypedBindings<B>>
 
 /** `unknown` when `Sc` is a direct child of the container's scope `Current`. */
 export type ChildCheck<
