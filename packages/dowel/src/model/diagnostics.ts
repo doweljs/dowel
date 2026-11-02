@@ -29,6 +29,11 @@ export interface MissingScopeValues<Slots> {
 	readonly 'dowel: supply these scoped slots with Slot.of(value); each lists what needs it': Slots
 }
 
+/** A binding passed to `open()` whose type is `any`, as when what made it failed to import. */
+export interface UntypedScopeBindings<Positions extends string> {
+	readonly 'dowel: these bindings are any, so open() cannot tell which slots they supply; each is its position, from 0': Positions
+}
+
 /** A binding passed to `open()` must carry a value, not a service. */
 export interface ScopeBindingsMustBeValues<Name extends string> {
 	readonly 'dowel: bind a value to this slot when opening a container, or bind the service at build()': Name

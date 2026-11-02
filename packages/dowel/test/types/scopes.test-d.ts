@@ -10,9 +10,11 @@ import {
 	scope,
 	service,
 	slot,
+	type UntypedScopeBindings,
 } from '../../src/index.ts'
 import type { ScopeName } from '../../src/model/checks.ts'
 import type { MetaOf } from '../../src/model/infer.ts'
+import type { OpenCheck } from '../../src/model/state.ts'
 import { Logger, test, Users } from './support.ts'
 
 test('a container remembers the optional slots it was opened with', async () => {
@@ -87,4 +89,22 @@ test('nested scopes', () => {
 		// @ts-expect-error: the session value is required
 		built.open(SessionScope)
 	})()
+})
+
+test('open() names a binding typed any, such as one made by a failed import, instead of misreading it', async () => {
+	const PerVisit = scope('visit')
+	const Visitor = slot('Visitor', { scope: PerVisit })<{ id: string }>()
+	const Greeting = service('Greeting', { visitor: Visitor }, ({ visitor }) => visitor.id)
+	const app = await container().provide(Greeting).build()
+	type State = typeof app extends Container<infer S, any, any> ? S : never
+	const loose: any = Visitor.of({ id: 'v' })
+
+	// @ts-expect-error: the binding is any
+	app.open(PerVisit, loose)
+	// @ts-expect-error: the second binding is any
+	app.open(PerVisit, Visitor.of({ id: 'v' }), loose)
+	expectTypeOf<OpenCheck<State, 'visit', [any]>>().toEqualTypeOf<UntypedScopeBindings<'0'>>()
+	expectTypeOf<
+		OpenCheck<State, 'visit', [typeof Visitor.of extends (v: any) => infer B ? B : never, any]>
+	>().toEqualTypeOf<UntypedScopeBindings<'1'>>()
 })
