@@ -1,5 +1,21 @@
 # @doweljs/core
 
+## 0.6.0
+
+### Minor Changes
+
+- fd6d7d9: feat: declare a service that fills a slot with `Slot.implement()`, which needs no name and stands for the slot it's bound to, or with `Slot.implementAs()` when something refers to it; both check the factory against the slot, and `inspect()` reports the slot a service implements
+- 14f1e42: breaking: move `bind()` and `optional()` onto slots, as `Slot.of()` and `Slot.optional()`
+- ca008e0: feat: track calls to a service whose instance is a function: disposal aborts `ctx.signal` for calls in flight and waits for them before disposing the instance and its dependencies; pass `{ track: false }` to opt out
+
+### Patch Changes
+
+- 58265a2: fix: report a node typed `any`, such as one a failed import leaves, where it is passed: by key among dependencies and inputs, by option for a scope or entry, and by method at `build()` for `provide()`, `bind()`, `contribute()` and `override()`; nothing else reads it as every name or scope
+- 8cb308b: fix: bind a value typed `any`, such as what `JSON.parse()` returns, as a value, instead of leaving `build()` uncallable over a scope that is not one literal name
+- 58145ab: fix: list every name in a diagnostic that has several, such as each node that needs a missing slot, instead of the type that computes them
+- ad85d41: fix: name a binding typed `any` passed to `open()`, such as one made by a failed import, instead of reporting it as a multi-binding or another scope's slot
+- ee5b2d0: fix: keep `undefined` in a slot's or service's type when exactOptionalPropertyTypes is off, so factories, `Infer` and bindings see it
+
 ## 0.5.0
 
 ### Minor Changes
