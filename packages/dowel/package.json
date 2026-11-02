@@ -27,7 +27,7 @@
 		"src"
 	],
 	"scripts": {
-		"typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.build.json --noEmit",
+		"typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.loose.json --noEmit && tsc -p tsconfig.build.json --noEmit",
 		"build": "rm -rf dist && tsc -p tsconfig.build.json"
 	}
 }

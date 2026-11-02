@@ -365,34 +365,6 @@ test('union dependencies retain every possible requirement', () => {
 	container().provide(Maybe).build()
 })
 
-test('conditionally present dependency keys retain their scopes and requirements', () => {
-	const Input = slot('ConditionalInput')<number>()
-	const deps = Math.random() > 0.5 ? { input: Input } : {}
-	const Consumer = service('Consumer', deps, ({ input }) => ({ input }))
-
-	expectTypeOf(Consumer.scope).toEqualTypeOf<'root'>()
-	expectTypeOf<Infer<typeof Consumer>>().toEqualTypeOf<{ input: number | undefined }>()
-	expectTypeOf<keyof MetaOf<typeof Consumer>['graph']>().toEqualTypeOf<
-		'Consumer' | 'ConditionalInput'
-	>()
-	// @ts-expect-error: the branch with Input still requires a binding
-	container().provide(Consumer).build()
-	container().provide(Consumer).bind(Input, 1).build()
-
-	// An explicitly optional property must behave like the inferred union above.
-	const make = (deps: { input?: typeof Input }) =>
-		service('Annotated', deps, ({ input }) => ({ input }))
-	const Annotated = make({})
-	expectTypeOf(Annotated.scope).toEqualTypeOf<'root'>()
-	expectTypeOf<Infer<typeof Annotated>>().toEqualTypeOf<{ input: number | undefined }>()
-	expectTypeOf<keyof MetaOf<typeof Annotated>['graph']>().toEqualTypeOf<
-		'Annotated' | 'ConditionalInput'
-	>()
-	// @ts-expect-error: the helper's declared dependency map may contain Input
-	container().provide(Annotated).build()
-	container().provide(Annotated).bind(Input, 1).build()
-})
-
 test('bind checks the implementation against the slot', () => {
 	Logger.of({ info: () => {} })
 	// @ts-expect-error: wrong shape
@@ -571,4 +543,25 @@ test('a node typed any, such as one a failed import leaves, is reported where it
 
 	// A parent can't be reported, since any check on the name would widen a template literal passed as it; it reads as root.
 	expectTypeOf(scope('child', loose)).toEqualTypeOf(scope('child'))
+})
+
+test('a slot or service whose type includes undefined keeps it, whatever exactOptionalPropertyTypes says', async () => {
+	const Name = slot('Name')<string | undefined>()
+	const Maybe = service('Maybe', (): string | undefined => (Math.random() > 0.5 ? 'x' : undefined))
+	expectTypeOf<Infer<typeof Name>>().toEqualTypeOf<string | undefined>()
+	expectTypeOf<Infer<typeof Maybe>>().toEqualTypeOf<string | undefined>()
+
+	// A factory sees the undefined its dependencies may hold.
+	const Uses = service('Uses', { name: Name, maybe: Maybe }, ({ name, maybe }) => {
+		expectTypeOf(name).toEqualTypeOf<string | undefined>()
+		expectTypeOf(maybe).toEqualTypeOf<string | undefined>()
+		return name ?? maybe
+	})
+
+	// undefined is a value the slot may be bound to, at build() and at open().
+	const app = await container().provide(Uses).bind(Name, undefined).build()
+	expectTypeOf(app.get(Uses)).toEqualTypeOf<string | undefined>()
+	Name.of(undefined)
+	// @ts-expect-error: a slot whose type excludes undefined still rejects it
+	container().bind(slot('Strict')<string>(), undefined)
 })

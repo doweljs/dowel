@@ -22,14 +22,16 @@ import type { ScopeDescriptor } from './scopes.ts'
 import type { IsAny, Simplify, UnionToIntersection } from './util.ts'
 
 /** The instance type of a slot or service, or the runner type of an execution. */
-export type Infer<N> = N extends { readonly '~type'?: infer T } ? T : never
+// The type sits in a one-element tuple: read back from an optional property, it would lose `undefined`
+// whenever exactOptionalPropertyTypes is off.
+export type Infer<N> = N extends { readonly '~type'?: readonly [infer T] } ? T : never
 
 export type MetaOf<N> = N extends { readonly '~meta'?: infer M } ? M : never
 
 type ResolvedDep<D> =
 	D extends Optional<infer G>
 		? Infer<G> | undefined
-		: D extends { readonly '~type'?: infer T }
+		: D extends { readonly '~type'?: readonly [infer T] }
 			? T
 			: never
 
