@@ -1,6 +1,6 @@
 import type { ServiceContext } from '../api.ts'
 import { DowelError } from '../errors.ts'
-import type { DeclaredNames, DeclaredScope, LiteralName } from '../model/checks.ts'
+import type { DeclaredNames, DeclaredScope, LiteralName, Typed } from '../model/checks.ts'
 import type {
 	AnyScope,
 	Deps,
@@ -12,6 +12,7 @@ import type {
 import type { ScopeAboveDependencies } from '../model/diagnostics.ts'
 import type { ComputeMeta, ImplementationMetaOf, MetaOf, Resolved } from '../model/infer.ts'
 import type { CheckScopes, EffectiveScope, InferredScope } from '../model/scopes.ts'
+import type { IsAny } from '../model/util.ts'
 import { dependencyOf, scopeNode, slotNode, usableScope } from '../nodes/coerce.ts'
 import { assertDistinctNames, deeper, isAtOrAbove } from '../nodes/hierarchy.ts'
 import {
@@ -35,7 +36,11 @@ export interface ServiceOptions<D extends Deps, Sc extends AnyScope> {
 	readonly scope?: Sc & DeclaredScope<Sc> & CheckScope<D, Sc>
 }
 
-type ExplicitScope<Sc extends AnyScope> = [Sc] extends [never] ? never : MetaOf<Sc>
+type ExplicitScope<Sc extends AnyScope> = [Sc] extends [never]
+	? never
+	: IsAny<Sc> extends true
+		? never
+		: MetaOf<Sc>
 
 /** What an implementation of a slot produces: one item of a multi-binding, otherwise the slot's type. */
 type SlotValue<T, M extends SlotMeta> = M['many'] extends true ? ItemOf<T> : T
@@ -62,7 +67,7 @@ export interface SlotImplement<T, M extends SlotMeta> {
 	>(
 		deps: D & CheckScopes<D> & DeclaredNames<D>,
 		factory: (deps: Resolved<D>, ctx: ServiceContext) => R,
-		options?: ServiceOptions<D, Sc>,
+		options?: ServiceOptions<D, Sc> & Typed<Sc, 'scope'>,
 	): Implementation<Awaited<R>, ImplementationMetaOf<M, D, EffectiveScope<D, ExplicitScope<Sc>>>>
 }
 
@@ -86,7 +91,7 @@ export interface SlotImplementAs<T, M extends SlotMeta> {
 		name: LiteralName<N>,
 		deps: D & CheckScopes<D> & DeclaredNames<D>,
 		factory: (deps: Resolved<D>, ctx: ServiceContext) => R,
-		options?: ServiceOptions<D, Sc>,
+		options?: ServiceOptions<D, Sc> & Typed<Sc, 'scope'>,
 	): Service<Awaited<R>, ComputeMeta<N, D, EffectiveScope<D, ExplicitScope<Sc>>>>
 }
 
@@ -103,13 +108,13 @@ export interface SlotImplementAs<T, M extends SlotMeta> {
 export function service<N extends string, R, Sc extends AnyScope = never>(
 	name: LiteralName<N>,
 	factory: (ctx: ServiceContext) => R,
-	options?: ServiceOptions<{}, Sc>,
+	options?: ServiceOptions<{}, Sc> & Typed<Sc, 'scope'>,
 ): Service<Awaited<R>, ComputeMeta<N, {}, EffectiveScope<{}, ExplicitScope<Sc>>>>
 export function service<N extends string, const D extends Deps, R, Sc extends AnyScope = never>(
 	name: LiteralName<N>,
 	deps: D & CheckScopes<D> & DeclaredNames<D>,
 	factory: (deps: Resolved<D>, ctx: ServiceContext) => R,
-	options?: ServiceOptions<D, Sc>,
+	options?: ServiceOptions<D, Sc> & Typed<Sc, 'scope'>,
 ): Service<Awaited<R>, ComputeMeta<N, D, EffectiveScope<D, ExplicitScope<Sc>>>>
 export function service(name: string, ...rest: unknown[]): unknown {
 	return declareService(name, rest, undefined)

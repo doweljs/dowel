@@ -19,7 +19,7 @@ import type {
 } from './declarations.ts'
 import type { MergeGraph } from './graph.ts'
 import type { ScopeDescriptor } from './scopes.ts'
-import type { Simplify, UnionToIntersection } from './util.ts'
+import type { IsAny, Simplify, UnionToIntersection } from './util.ts'
 
 /** The instance type of a slot or service, or the runner type of an execution. */
 export type Infer<N> = N extends { readonly '~type'?: infer T } ? T : never
@@ -48,17 +48,29 @@ type SlotEntry<M extends SlotMeta> = {
 
 /** The subgraph a dependency contributes. */
 export type GraphOf<N> =
-	N extends Service<any, infer M>
-		? M['graph']
-		: N extends Execution<any, infer M>
+	IsAny<N> extends true
+		? {}
+		: N extends Service<any, infer M>
 			? M['graph']
-			: N extends Slot<any, infer M>
-				? { readonly [K in M['name']]: SlotEntry<M> }
-				: N extends Optional<infer G>
-					? GraphOf<G>
-					: {}
+			: N extends Execution<any, infer M>
+				? M['graph']
+				: N extends Slot<any, infer M>
+					? { readonly [K in M['name']]: SlotEntry<M> }
+					: N extends Optional<infer G>
+						? GraphOf<G>
+						: {}
 
 export type NameOf<N> = N extends { readonly name: infer Name extends string } ? Name : never
+
+/**
+ * The names of the nodes in `N`, a union of dependencies; none when one is
+ * typed `any`, which makes the whole union `any` and would read as every
+ * name. The `any` is reported where it was passed.
+ */
+export type NamesOf<N> = AnyIn<N> extends true ? never : NameOf<N>
+
+/** Whether a union is `any`, the one type that takes both branches; cheap for a union of nodes. */
+type AnyIn<N> = boolean extends (N extends never ? true : false) ? true : false
 
 type DepName<D> = D extends Optional<infer G> ? NameOf<G> : NameOf<D>
 type RequiredName<D> = D extends Optional<any> ? never : NameOf<D>

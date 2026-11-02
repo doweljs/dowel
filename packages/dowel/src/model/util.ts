@@ -20,3 +20,16 @@ export type IsSingleLiteral<S extends string> = [S] extends [never]
 
 /** Flattens intersections and mapped types into a readable object type. */
 export type Simplify<T> = { [K in keyof T]: T[K] } & {}
+
+/**
+ * Whether `X` is `any`. Not for the wildcard that stands in for a type
+ * parameter while the checker decides whether a generic call could fail,
+ * which also passes `0 extends 1 & X` but, unlike `any`, extends `never`.
+ */
+export type IsAny<X> = [unknown] extends [X]
+	? [X] extends [never]
+		? false
+		: 0 extends 1 & X
+			? true
+			: false
+	: false

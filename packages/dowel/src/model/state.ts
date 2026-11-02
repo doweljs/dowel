@@ -45,7 +45,7 @@ import type {
 	RequiredBy,
 } from './graph.ts'
 import type { GraphOf, Infer, MetaOf } from './infer.ts'
-import type { Simplify } from './util.ts'
+import type { IsAny, Simplify } from './util.ts'
 
 export interface ContainerState {
 	/** Every node known to the container, merged from what was provided, bound and overridden. */
@@ -99,7 +99,7 @@ export type Providable = AnyService | AnyExecution | AnySlot | AnyBinding
  * merged graph, which grows with every step until declaration files cannot
  * hold it.
  */
-export type Provide<S extends ContainerState, I> = S extends ContainerState
+export type Provide<S, I> = S extends ContainerState
 	? I extends Binding<any, infer M>
 		? State<
 				MergeGraph<S['graph'], M['graph']>,
@@ -167,11 +167,59 @@ type BoundTwice<Key extends string> = Key extends `${infer Slot}<-${infer Item}`
 		? `'${Key}' is bound twice; use override() to replace a binding`
 		: never
 
-/** The state after providing a tuple of items, left to right. */
-export type ProvideAll<
-	S extends ContainerState,
+/**
+ * The state after providing a tuple of items, left to right. An item typed
+ * `any` is provided as a symbol, which merges nothing, and reported once at
+ * the end; `Untyped` is whether one was.
+ */
+export type ProvideAll<S extends ContainerState, Items extends readonly unknown[]> = ProvideEach<
+	S,
+	Items,
+	false
+>
+
+// Unconstrained: the checker cannot prove that Provide returns a state once its item is computed.
+type ProvideEach<
+	S,
 	Items extends readonly unknown[],
-> = Items extends readonly [infer Head, ...infer Rest] ? ProvideAll<Provide<S, Head>, Rest> : S
+	Untyped extends boolean,
+> = Items extends readonly [infer Head, ...infer Rest]
+	? ProvideEach<
+			Provide<S, AnyItem<Head> extends true ? UntypedItem : Head>,
+			Rest,
+			Untyped | AnyItem<Head>
+		>
+	: S extends ContainerState
+		? UntypedIssue<S, Untyped, 'provide', S>
+		: never
+
+/** Whether an item is `any`, the one type that takes both branches of `X extends never`. */
+type AnyItem<X> = boolean extends (X extends never ? true : false) ? true : false
+
+declare const untypedItem: unique symbol
+type UntypedItem = typeof untypedItem
+
+/**
+ * `Then`, unless `Untyped` says a builder method was given a node typed
+ * `any`: then `S` with an issue saying so, and nothing merged, since an
+ * `any` would read as every name. Reported at `build()`, like other
+ * composition problems.
+ */
+export type UntypedIssue<
+	S extends ContainerState,
+	Untyped extends boolean,
+	Method extends string,
+	Then,
+> = true extends Untyped
+	? State<
+			S['graph'],
+			S['roots'],
+			S['bound'],
+			S['overridden'],
+			| S['issues']
+			| `${Method}() was given an argument typed any; check that it is imported and typed`
+		>
+	: Then
 
 /**
  * `unknown` when `Items` is a tuple. An array of unknown length may hold any
@@ -352,7 +400,7 @@ type BindingsWhere<B extends readonly AnyBinding[], Kind, Scope> = B[number] ext
 
 /** Positions of the bindings in `B` whose type is `any`, which every other check would misread. */
 type UntypedBindings<B extends readonly AnyBinding[]> = Extract<
-	{ [K in keyof B]: 0 extends 1 & B[K] ? K : never }[number],
+	{ [K in keyof B]: IsAny<B[K]> extends true ? K : never }[number],
 	string
 >
 

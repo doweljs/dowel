@@ -1,6 +1,12 @@
 import type { RunContext, RunOptions } from '../api.ts'
 import { DowelError } from '../errors.ts'
-import type { DeclaredName, DeclaredNames, DeclaredScope, LiteralName } from '../model/checks.ts'
+import type {
+	DeclaredName,
+	DeclaredNames,
+	DeclaredScope,
+	LiteralName,
+	Typed,
+} from '../model/checks.ts'
 import type {
 	AnyScope,
 	AnyService,
@@ -10,7 +16,7 @@ import type {
 	SlotMeta,
 } from '../model/declarations.ts'
 import type { EntryNotVisible } from '../model/diagnostics.ts'
-import type { DependencyGraph, GraphOf, Infer, MetaOf, NameOf } from '../model/infer.ts'
+import type { DependencyGraph, GraphOf, Infer, MetaOf, NamesOf } from '../model/infer.ts'
 import type { UnionToIntersection } from '../model/util.ts'
 import { declaredNode, scopeNode, slotNode } from '../nodes/coerce.ts'
 import { assertDistinctNames, isAtOrAbove } from '../nodes/hierarchy.ts'
@@ -78,7 +84,7 @@ export type ComputeExecutionMeta<
 	readonly scope: MetaOf<Sc>['parent']
 	readonly above: Exclude<MetaOf<Sc>['above'], MetaOf<Sc>['parent']>
 	readonly child: MetaOf<Sc>['name']
-	readonly inputs: NameOf<I[keyof I]>
+	readonly inputs: NamesOf<I[keyof I]>
 	// Keep shared entry graphs intact, as service metadata does. Inputs can
 	// include slots the entry does not use, so they contribute their own graph.
 	readonly graph: UnionToIntersection<GraphOf<E>> &
@@ -87,10 +93,10 @@ export type ComputeExecutionMeta<
 				readonly kind: 'execution'
 				readonly scope: MetaOf<Sc>['parent']
 				readonly above: Exclude<MetaOf<Sc>['above'], MetaOf<Sc>['parent']>
-				readonly deps: NameOf<E>
+				readonly deps: NamesOf<E>
 				readonly optional: never
 				readonly child: MetaOf<Sc>['name']
-				readonly inputs: NameOf<I[keyof I]>
+				readonly inputs: NamesOf<I[keyof I]>
 			}
 		}
 }
@@ -113,7 +119,7 @@ export function execution<
 	const I extends InputSlots<Sc> = {},
 >(
 	name: LiteralName<N>,
-	options: ExecutionOptions<Sc, E, I>,
+	options: ExecutionOptions<Sc, E, I> & Typed<Sc, 'scope'> & Typed<E, 'entry'>,
 ): Execution<Runner<Infer<E>, I>, ComputeExecutionMeta<N, Sc, E, I>>
 export function execution(
 	name: string,

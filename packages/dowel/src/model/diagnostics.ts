@@ -29,6 +29,11 @@ export interface MissingScopeValues<Slots> {
 	readonly 'dowel: supply these scoped slots with Slot.of(value); each lists what needs it': Slots
 }
 
+/** Nodes typed `any`, as when what made them failed to import, named by key or by the option that takes them. */
+export interface UntypedNodes<Where extends string> {
+	readonly 'dowel: these are any, so the types cannot tell which nodes they are; check that each is imported and typed': Where
+}
+
 /** A binding passed to `open()` whose type is `any`, as when what made it failed to import. */
 export interface UntypedScopeBindings<Positions extends string> {
 	readonly 'dowel: these bindings are any, so open() cannot tell which slots they supply; each is its position, from 0': Positions

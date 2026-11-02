@@ -1,8 +1,14 @@
 import type { DeclaredScope, LiteralName } from '../model/checks.ts'
 import type { AnyScope, AnySlot, DeclaredSlot, RootMeta } from '../model/declarations.ts'
-import type { EmptySlotOptions, MaybeMany, MaybeMissingScope } from '../model/diagnostics.ts'
+import type {
+	EmptySlotOptions,
+	MaybeMany,
+	MaybeMissingScope,
+	UntypedNodes,
+} from '../model/diagnostics.ts'
 import type { MetaOf } from '../model/infer.ts'
 import type { ScopeDescriptor } from '../model/scopes.ts'
+import type { IsAny } from '../model/util.ts'
 import { scopeNode, slotNode } from '../nodes/coerce.ts'
 import { allocateId, internal, ROOT, type SlotNode } from '../nodes/node.ts'
 import { bindingOf } from './bind.ts'
@@ -37,7 +43,9 @@ type ReadableOptions<N extends string, O extends SlotOptions> = [
 	: ([Has<O, 'scope'>] extends [false]
 			? unknown
 			: [O] extends [{ readonly scope: infer Sc extends AnyScope }]
-				? DeclaredScope<Sc>
+				? IsAny<Sc> extends true
+					? UntypedNodes<'scope'>
+					: DeclaredScope<Sc>
 				: MaybeMissingScope<N>) &
 			([Has<O, 'many'>] extends [false]
 				? unknown
@@ -49,7 +57,9 @@ type ReadableOptions<N extends string, O extends SlotOptions> = [
 type Has<O, K extends PropertyKey> = O extends unknown ? (K extends keyof O ? true : false) : never
 
 type OptionScope<O extends SlotOptions> = O extends { readonly scope: infer Sc extends AnyScope }
-	? MetaOf<Sc>
+	? IsAny<Sc> extends true
+		? RootMeta
+		: MetaOf<Sc>
 	: RootMeta
 
 type OptionMany<O extends SlotOptions> = O extends { readonly many: true } ? true : false

@@ -5,10 +5,15 @@
  */
 
 import type { AnyScope } from './declarations.ts'
-import type { IndefiniteName, IndefiniteScope, ReservedScopeName } from './diagnostics.ts'
+import type {
+	IndefiniteName,
+	IndefiniteScope,
+	ReservedScopeName,
+	UntypedNodes,
+} from './diagnostics.ts'
 import type { Graph } from './graph.ts'
 import type { MetaOf } from './infer.ts'
-import type { IsSingleLiteral } from './util.ts'
+import type { IsAny, IsSingleLiteral } from './util.ts'
 
 /**
  * Whether the types can tell a name apart from every other: `literal` for
@@ -71,13 +76,15 @@ export type ScopeName<N extends string> =
  */
 type StatusOf<X> = [X] extends [never]
 	? never
-	: X extends { readonly name: infer Name }
-		? NameStatus<Name>
-		: X extends { readonly '~kind': 'optional'; readonly slot: infer G }
-			? StatusOf<G>
-			: X extends Bound<infer Name>
-				? NameStatus<Name>
-				: never
+	: IsAny<X> extends true
+		? 'any'
+		: X extends { readonly name: infer Name }
+			? NameStatus<Name>
+			: X extends { readonly '~kind': 'optional'; readonly slot: infer G }
+				? StatusOf<G>
+				: X extends Bound<infer Name>
+					? NameStatus<Name>
+					: never
 
 type WideNames<X> = X extends { readonly name: infer Name } | Bound<infer Name>
 	? NameStatus<Name> extends 'wide'
@@ -105,9 +112,14 @@ export type DeclaredName<X> = 'wide' extends StatusOf<X> ? IndefiniteName<WideNa
  * type parameter has no status while it is generic, like such a node.
  */
 export type DeclaredNames<D> =
-	'wide' extends Statuses<D>
-		? IndefiniteName<{ [K in keyof D]-?: WideNames<D[K]> }[keyof D]>
-		: unknown
+	'any' extends Statuses<D>
+		? UntypedNodes<{ [K in keyof D]-?: IsAny<D[K]> extends true ? K : never }[keyof D] & string>
+		: 'wide' extends Statuses<D>
+			? IndefiniteName<{ [K in keyof D]-?: WideNames<D[K]> }[keyof D]>
+			: unknown
+
+/** `unknown` unless `X` is typed `any`, then a diagnostic naming it by `Where`: for an option, which an `any` argument would pass. */
+export type Typed<X, Where extends string> = IsAny<X> extends true ? UntypedNodes<Where> : unknown
 
 type Statuses<D> = [D] extends [never] ? never : { [K in keyof D]-?: StatusOf<D[K]> }[keyof D]
 
