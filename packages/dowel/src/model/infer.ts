@@ -140,7 +140,15 @@ type BindingEntry<
 	readonly inputs: never
 }
 
-export type BindingMetaOf<TM extends SlotMeta, I> = (I extends Implementation<any, any>
+/**
+ * An implementation as the types read it: `any`, such as what `JSON.parse()`
+ * returns, is taken as a value, rather than matching every kind at once.
+ */
+export type ImplOf<I> = 0 extends 1 & I ? unknown : I
+
+export type BindingMetaOf<TM extends SlotMeta, I> = BindingMeta<TM, ImplOf<I>>
+
+type BindingMeta<TM extends SlotMeta, I> = (I extends Implementation<any, any>
 	? { readonly anonymous: true }
 	: {}) & {
 	readonly name: TM['name']
