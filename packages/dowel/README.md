@@ -139,6 +139,21 @@ The factory's context mirrors `AsyncDisposableStack`:
 
 Only what a factory adopts is disposed; adopting what another service owns is an error. Disposal runs last-in-first-out, inner scopes before outer ones, and waits for factories still running.
 
+### Function services
+
+A service whose instance is a function is an operation its callers run, and disposal waits for those runs as it does for runs of an [execution](#executions):
+
+```ts
+const Exec = service('Exec', { spawn: Spawn }, ({ spawn }, ctx) => async (command: string) => {
+	const child = spawn(command, { signal: ctx.signal })
+	return await child.result
+}, { scope: Operation })
+```
+
+Each call that returns a promise is tracked until it settles. Once the container's disposal starts, `ctx.signal` aborts for calls in flight and for calls that start after; the instance's disposal waits for its calls before its own disposers run and its dependencies are disposed. A call made after that still runs, with `ctx.signal` aborted, as a method of a retained object would. Results, `this`, properties and `new` pass through unchanged.
+
+Pass `{ track: false }` when callers own what a call starts, such as a stream it returns. A function bound with `Slot.of()` is the binder's and is never tracked.
+
 ## Containers
 
 ```ts

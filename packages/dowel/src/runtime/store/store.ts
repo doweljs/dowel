@@ -28,6 +28,8 @@ export interface InstanceRecord {
 	disposed: boolean
 	/** Behind `ctx.signal`, created on first use; aborted when disposal of the instance starts. */
 	controller: AbortController | null
+	/** Calls to a tracked function instance not yet settled, created on the first. */
+	inFlight: Set<Promise<unknown>> | null
 }
 
 /** Something a store owns and disposes before itself: an opened container or a running execution. */

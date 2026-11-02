@@ -30,6 +30,12 @@ function reach(store: Store, why: () => unknown): void {
 		record.controller ??= new AbortController()
 		record.controller.abort(why())
 	}
+	// Calls to a tracked function in flight are told to stop as runs are: before anything beneath is waited for.
+	for (const record of store.records) {
+		if (record.inFlight === null || record.inFlight.size === 0) continue
+		record.controller ??= new AbortController()
+		record.controller.abort(why())
+	}
 	const listeners = store.cancelListeners
 	store.cancelListeners = null
 	if (listeners !== null) for (const listener of listeners) listener(why)

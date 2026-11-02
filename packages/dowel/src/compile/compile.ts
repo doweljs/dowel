@@ -411,7 +411,7 @@ class Compiler {
 			edges.push({ key, id: target.id })
 		}
 
-		const { factory, name } = node
+		const { factory, name, track } = node
 		const plan: ServicePlan = {
 			kind: 'service',
 			name,
@@ -419,6 +419,7 @@ class Compiler {
 			deps,
 			cell: this.allocate(scope),
 			factory,
+			track,
 		}
 		this.addCached(plan)
 		this.record(node, scope, plan, edges, null)
